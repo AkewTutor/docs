@@ -324,7 +324,7 @@ Reflected on the **next new booking only** — a `Payment`/`TutorEarning` alread
 
 #### POST /admin/refunds/:refundId/approve
 
-**Purpose:** Approve a calculated, prorated refund (UC-83, FR-AD-012, FR-PB-007). Proration is always by sessions delivered, never calendar days (Section 13 Refund Proration Formula) — `amount = (sessionsRemaining / totalSessionsBilled) × payment.amount`. A free make-up session under FR-MK-001 is never counted as undelivered toward `sessionsRemaining` (Section 13 Definition of Done #3).
+**Purpose:** Approve a calculated, prorated refund (UC-83, FR-AD-012, FR-PB-007). Proration is always by sessions delivered, never calendar days (Section 13 Refund Proration Formula) — `amount = (sessionsRemaining / totalSessionsBilled) × payment.amount`. A free make-up session under FR-MK-001 is never counted as undelivered toward `sessionsRemaining` (Section 13 Definition of Done #4).
 
 **Auth:** Admin
 

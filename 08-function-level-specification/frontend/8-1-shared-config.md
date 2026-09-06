@@ -66,15 +66,14 @@ export default function AppRoutes() {
         </Route>
       </Route>
 
-      <Route element={<ProtectedRoute roles={['STUDENT']} />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/student/*" element={/* StudentRoutes — profile, subjects n/a, availability n/a, find-tutor, etc. per each feature file below */ null} />
-        </Route>
-      </Route>
-      <Route element={<ProtectedRoute roles={['PARENT']} />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/parent/*" element={null /* ParentRoutes */} />
-        </Route>
+      {/* /student/* and /parent/* are NOT wrapped in one blanket ProtectedRoute here — several
+          /student/... leaf routes are Parent-reachable too (find-tutor, upcoming-classes,
+          achievements, etc.). Each leaf route below carries its own ProtectedRoute with the
+          exact role set (or 'any') declared in its owning feature file (8-2 through 8-8);
+          DashboardLayout is still shared since all four roles use the same shell. */}
+      <Route element={<DashboardLayout />}>
+        <Route path="/student/*" element={/* StudentRoutes — each leaf route individually wrapped in ProtectedRoute(roles) per its owning feature file below; role sets vary per route (e.g. ['STUDENT'] for /student/profile, ['STUDENT','PARENT'] for /student/find-tutor, 'any' for /student/achievements) */ null} />
+        <Route path="/parent/*" element={null /* ParentRoutes — same per-leaf-route pattern */} />
       </Route>
       <Route element={<ProtectedRoute roles={['TUTOR']} />}>
         <Route element={<DashboardLayout />}>
@@ -107,7 +106,7 @@ export default function AppRoutes() {
   );
 }
 ```
-The exact leaf routes under each `/student/*`, `/parent/*`, `/tutor/*`, `/admin/*` block are enumerated in full in each owning feature's own file below (8-2 through 8-8) — this file only fixes the four role-gated top-level mount points plus the shared/public/any-role routes that belong to no single feature. `ProtectedRoute`'s `roles` prop accepts either a `Role[]` or the literal string `'any'`, matching frontend conventions §0.2's four route categories.
+The exact leaf routes under each `/student/*`, `/parent/*`, `/tutor/*`, `/admin/*` block are enumerated in full in each owning feature's own file below (8-2 through 8-8) — this file only fixes the four dashboard mount points plus the shared/public/any-role routes that belong to no single feature. `ProtectedRoute`'s `roles` prop accepts either a `Role[]` or the literal string `'any'`, matching frontend conventions §0.2's four route categories. `/tutor/*` and `/admin/*` are wrapped in one blanket guard above because every leaf route in those two features is in fact role-exclusive; `/student/*` and `/parent/*` are not, since Parent-reachable leaf routes exist under the `/student/` prefix (frontend conventions §0.2's callout) — those two guard themselves per-route instead.
 
 ---
 

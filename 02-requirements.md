@@ -5,7 +5,7 @@
 **Links back to:** [01. Problem & Solution Statement]
 **Links forward to:** [03. Use Cases]
 
-**Version 3.1 — Amended Baseline**, incorporating the v3.0 final requirements baseline plus the resolution of six implementation-readiness gaps identified during Technical Specification hand-off review.
+**Version 3.2 — Amended Baseline**, incorporating the v3.1 amended baseline plus the resolution of seven previously-undefined mechanics (session cadence, match-percentage formula, group-splitting mechanics, XP point values, streak milestones, the V1 badge list, and monetary rounding — gaps `M3`, `M4`, `M5`, and `M7`) surfaced while cross-referencing this document against the Database & Data Model (Doc 04), API Specification (Doc 06), and Function-Level Specification (Doc 08) during Technical Specification drafting.
 
 *September 2026 · Confidential — For Project Use Only*
 
@@ -21,11 +21,11 @@
 |---|---|
 | Document Title | AKEWTutor — Software Requirements Specification (SRS) |
 | Project | AKEWTutor Online Tutoring Platform |
-| Version | 3.1 — Amended Baseline |
-| Status | Amended baseline — six technical hand-off gaps resolved (Section 18.5). Ready for Technical Specification drafting. |
+| Version | 3.2 — Amended Baseline |
+| Status | Amended baseline — six v3.1 technical hand-off gaps (Section 18.5) plus seven v3.2 mechanics gaps (Section 18.6) resolved. Ready for Technical Specification drafting. |
 | Date | September 2026 |
 | Prepared For | AKEWTutor Client / Project Owner |
-| Source Material | v3.0 final requirements baseline, plus the AKEWTutor SRS Hand-off Review (6 items) |
+| Source Material | v3.1 amended baseline, plus mechanics gaps surfaced during Docs 04/06/08 cross-referencing |
 | Classification | Confidential — for project use only |
 
 ### Revision History
@@ -35,7 +35,8 @@
 | 1.0 | Aug 2026 | Initial structured SRS derived from client project notes. | Business Analyst |
 | 2.0 | Aug 2026 | Incorporated client decisions on all v1.0 clarification items; added Parent/Student account model, refund policy, recording storage architecture; applied two feature changes (ratings/reviews removed; format-based matching split). Two items remained open. | Business Analyst |
 | 3.0 | Sep 2026 | Closed both remaining Section 18 items (video conferencing, third-party providers). Resolved 11 numbered gaps, 3 minor items, an 8-item SRS-level audit, and a 5-item final-check audit across five consistency-audit rounds. Added Messaging (FR-MS), Make-up/Reschedule/Cancellation (FR-MK), and two Safety requirements (FR-SC-008/009). Amended account-model, subject-ranking, payout, leaderboard, and notification requirements. Added per-section Definition of Done blocks to Sections 5–14. Fixed one requirement-ID collision and one cross-section contradiction. No items remained open. | Business Analyst |
-| **3.1** | **Sep 2026** | Resolved six gaps surfaced during Technical Specification hand-off review: tutor grade coverage, session handling during a payment pause, group messaging thread model, tutor pay for self-caused make-up sessions, stalled 1-to-1 match escalation, and format-switching. Added FR-PB-009, FR-MK-009, FR-MA-018, and FR-SP-045–049. Amended FR-MS-001. No items remain open. | Business Analyst |
+| 3.1 | Sep 2026 | Resolved six gaps surfaced during Technical Specification hand-off review: tutor grade coverage, session handling during a payment pause, group messaging thread model, tutor pay for self-caused make-up sessions, stalled 1-to-1 match escalation, and format-switching. Added FR-PB-009, FR-MK-009, FR-MA-018, and FR-SP-045–049. Amended FR-MS-001. No items remain open. | Business Analyst |
+| **3.2** | **Sep 2026** | Defined seven previously-undefined mechanics surfaced while cross-referencing this document against Docs 04/06/08 during Technical Specification drafting: session cadence/billing derivation (Section 7), the match-percentage formula (Section 8, resolves M7), group-splitting mechanics on tutor exit (Section 8, resolves M3), XP point values (Section 10, resolves M4), streak milestones (Section 10, supports M4/M5), the V1 badge seed list (Section 10, resolves M5), and the monetary rounding rule (Section 13, resolves M7). No requirement IDs added, retired, or renumbered — these are definitional/mechanical clarifications of existing requirements, not new or amended FR-xxx items. No items remain open. | Business Analyst |
 
 ### Requirement ID Key
 
@@ -45,7 +46,7 @@ Every functional requirement carries a unique ID in the form **FR-[AREA]-[NUMBER
 
 ## Contents
 
-> Sections 5–14 contain numbered functional requirements (FR-xxx), individually traceable, each closing with a Definition of Done block. Section 15 adds baseline non-functional requirements (NFR-xxx). Boxes marked **RESOLVED** or **NEW IN v3.0 / v3.1** flag every decision closed since the prior version; Section 18 consolidates the full resolution record for client sign-off. Chapters 01 (Introduction) and 02 (Platform Overview) now live in 01-problem-and-solution-statement.md — see the numbering note above.
+> Sections 5–14 contain numbered functional requirements (FR-xxx), individually traceable, each closing with a Definition of Done block. Section 15 adds baseline non-functional requirements (NFR-xxx). Boxes marked **RESOLVED** or **NEW IN v3.0 / v3.1 / v3.2** flag every decision closed since the prior version; Section 18 consolidates the full resolution record for client sign-off. Chapters 01 (Introduction) and 02 (Platform Overview) now live in 01-problem-and-solution-statement.md — see the numbering note above.
 
 03. Public Website Structure
 04. User Roles & Account Model
@@ -62,7 +63,7 @@ Every functional requirement carries a unique ID in the form **FR-[AREA]-[NUMBER
 15. Non-Functional Requirements
 16. Third-Party Dependencies & Integrations
 17. End-to-End User Journey
-18. Resolution Record — v2.0 to v3.1
+18. Resolution Record — v2.0 to v3.2
 19. Approval & Sign-off
 
 ---
@@ -699,9 +700,9 @@ Matching considers the student's subject, grade (always a hard match), academic 
 1. Two students who joined on different calendar dates receive their payment reminders 3 days before their own respective due dates, not a shared platform date.
 2. A refund for 2 undelivered sessions out of 8 billed sessions (a 2-session/week Cohort's 28-day cycle) returns exactly 2/8 of the amount paid, not a day-based fraction.
 3. A refund whose exact proration would land on a fractional subunit (e.g. 3/8 of 1,650 ETB = 618.75) is stored and paid out as exactly 618.75 ETB — rounded to 2 decimal places, never truncated or rounded to a whole Birr.
-3. A free make-up session never appears as a separately billed or separately refundable line item.
-4. A Grade 10 student with no linked guardian can complete a payment end-to-end via Chapa.
-5. A session that falls during a payment pause is rescheduled with zero refund, zero make-up entry, and zero miss classification once payment resumes.
+4. A free make-up session never appears as a separately billed or separately refundable line item.
+5. A Grade 10 student with no linked guardian can complete a payment end-to-end via Chapa.
+6. A session that falls during a payment pause is rescheduled with zero refund, zero make-up entry, and zero miss classification once payment resumes.
 
 ---
 
@@ -812,9 +813,9 @@ The full platform experience, from a student's point of view, in a single flow:
 
 ---
 
-## 18 Resolution Record — v2.0 to v3.1
+## 18 Resolution Record — v2.0 to v3.2
 
-All items open at the end of v2.0 were resolved in v3.0, and the six hand-off gaps identified while preparing v3.0 for Technical Specification drafting are resolved below in Section 18.5. **No items remain open.**
+All items open at the end of v2.0 were resolved in v3.0, the six hand-off gaps identified while preparing v3.0 for Technical Specification drafting are resolved below in Section 18.5, and the seven mechanics gaps surfaced while cross-referencing Docs 04/06/08 are resolved in Section 18.6. **No items remain open.**
 
 ### 18.1 Former Section 18 Items — Both Closed (v3.0)
 
@@ -875,14 +876,28 @@ Three minor items were also resolved in this range: a wording clarification on F
 | 5 | Stalled 1-to-1 match escalation | Zero matches for a continuous 48 hours auto-notifies Admin, equivalent to a manual "No Exact Match" trigger. → Section 8 (FR-MA-018). |
 | 6 | Format switching | Added a graceful format-switch path: immediate cancellation of the current match, re-entry into matching under the new format, and prorated refund of remaining paid sessions. → Section 5.12 (FR-SP-045–049). |
 
-> ✅ **RESOLVED — v3.1 — Overall Status**
-> Every item raised across the v2.0 client review, the five v3.0 consistency-audit rounds, and the v3.1 technical hand-off review is now resolved and reflected in the numbered sections above. **Zero items remain open.** This document is ready to serve as the basis for the Technical/System Specification.
+### 18.6 Round 7 — Docs 04/06/08 Cross-Reference Review (v3.2, 7 Items)
+
+> ℹ️ These items are mechanical/definitional, not new or amended requirements: no FR-xxx ID was added, retired, or amended by this round. Each item closes a case where a downstream document (Doc 04's data model, Doc 06's API spec, or Doc 08's function-level spec) already referenced a value or behavior — as a field, a DTO example, or a function signature — that this document had never actually defined, leaving three independent implementers free to resolve it three different ways.
+
+| # | Topic | Resolution |
+|---|---|---|
+| 1 | Session cadence & billing derivation | `sessionsPerWeek` is derived from the tutor's matched recurring `AvailabilitySlot` rows at Cohort confirmation, frozen from that point; the billing cycle is a fixed 28-day window; `totalSessionsBilled = sessionsPerWeek × 4`. → Section 7. |
+| 2 | Match-percentage formula (M7) | Fixed as a weighted sum — subject rank 40%, teaching-style match 35%, schedule overlap 25% — computed only after all hard filters pass, rounded to the nearest whole percent. → Section 8. |
+| 3 | Group-splitting mechanics on tutor exit (M3) | Worked example defining exactly how Admin reforms one or more replacement cohorts when a group's tutor exits, including how refunds for the transition gap are prorated. → Section 8. |
+| 4 | XP point values (M4) | Fixed point values per `XPReason` (`CLASS_ATTENDED` = 20, `ASSESSMENT_COMPLETED` = 15, `STREAK_MILESTONE` = 50, `CHALLENGE_COMPLETED` = 30/100, `BADGE_AWARDED` = 25, `OTHER` = Admin-specified). → Section 10. |
+| 5 | Streak milestones (M4/M5) | Fixed at 7, 30, and 90 consecutive active days; each milestone awards exactly one `STREAK_MILESTONE` XP entry and resets to zero if the streak breaks. → Section 10. |
+| 6 | V1 badge seed list (M5) | Enumerated the initial student and tutor badge catalog (7 student badges, 4 tutor badges) shipped at launch. → Section 10. |
+| 7 | Monetary rounding rule (M7) | Every calculated (not Admin-set) monetary amount — refund proration, the 50% reduced make-up rate — rounds to 2 decimal places, standard round-half-up, at calculation time. → Section 13. |
+
+> ✅ **RESOLVED — v3.2 — Overall Status**
+> Every item raised across the v2.0 client review, the five v3.0 consistency-audit rounds, the v3.1 technical hand-off review, and the v3.2 Docs 04/06/08 cross-reference review is now resolved and reflected in the numbered sections above. **Zero items remain open.** This document is ready to serve as the basis for the Technical/System Specification.
 
 ---
 
 ## 19 Approval & Sign-off
 
-By signing below, the client confirms that this v3.1 Software Requirements Specification — the amended baseline, with no open items — accurately reflects the scope of work to be delivered, and authorizes the design and development team to proceed to Technical/System Specification on this basis.
+By signing below, the client confirms that this v3.2 Software Requirements Specification — the amended baseline, with no open items — accurately reflects the scope of work to be delivered, and authorizes the design and development team to proceed to Technical/System Specification on this basis.
 
 **Client / Project Owner**
 

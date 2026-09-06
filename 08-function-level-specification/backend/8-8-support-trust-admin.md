@@ -146,7 +146,7 @@ Test file: `tests/services/adminReporting.service.test.ts`
 | GET | /activity | `authMiddleware, requireRole('ADMIN')` | getActivity |
 | GET | /tutor-performance | `authMiddleware, requireRole('ADMIN')` | getTutorPerformance |
 
-Mounted at `/admin/reports`. **H5 fix:** `GET /admin/reports/tutor-performance` is now independently documented in `08-support-trust-admin-api.md` §8.1 (was previously implied-only, flagged as a gap). `GET /admin/reports/activity` remains implied by Doc 05a's `getActivityHistory` service function and UC-91's stated scope but is **still not independently documented** as its own endpoint in the API spec — this narrower gap is left flagged rather than silently resolved, since it wasn't part of this review round's H5 finding and folding it in without confirming its response shape risks guessing wrong. Worth a follow-up pass with whoever owns Doc 06 before `/activity` is built against.
+Mounted at `/admin/reports`. **H5 fix:** `GET /admin/reports/tutor-performance` is now independently documented in `08-support-trust-admin-api.md` §8.1 (was previously implied-only, flagged as a gap). **Gap closed (follow-up to H5):** `GET /admin/reports/activity` is likewise now independently documented in `08-support-trust-admin-api.md` §8.1 — `dateRange`/`eventType` query params, response shape, and the six source tables it reads from (`Cohort`, `Payment`, `ComplaintReport`, `TutorProfile`, `Refund`, `Payout`) are all specified there. No implied-only endpoints remain in this feature.
 
 ---
 

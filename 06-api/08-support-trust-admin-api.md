@@ -333,6 +333,48 @@ This is a read-only, computed-on-request summary — it is not a stored `Report`
 
 ---
 
+#### GET /admin/reports/activity
+
+**Gap closed (follow-up to H5).** Previously implied only by Doc 05a's `getActivityHistory` service signature and UC-91/FR-AD-021's "platform statistics, reports, and activity history" — flagged in `08-function-level-specification/backend/8-8-support-trust-admin.md` as not yet independently documented. Closed here the same way H5 closed `tutor-performance`: a real endpoint entry rather than an implied one. Backs UC-91 (FR-AD-021), reading across every feature as a chronological, filterable event log — same "integration surface, no owned data" pattern as `platform-health` and `tutor-performance` above.
+
+**Auth:** Admin
+
+**Query params:**
+```
+?page=1&limit=20 (00-api-conventions §0.3 pagination pattern)
+?dateRange=7d|30d|90d|all (default 30d)
+?eventType=BOOKING|PAYMENT|DISPUTE|TUTOR_VERIFICATION|REFUND|PAYOUT (optional filter; omit for all types)
+```
+
+**Success response — 200:**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "OK",
+  "data": {
+    "events": [
+      {
+        "id": "uuid",
+        "eventType": "DISPUTE",
+        "summary": "Complaint filed against tutor by student",
+        "relatedEntityType": "ComplaintReport",
+        "relatedEntityId": "uuid",
+        "occurredAt": "2026-09-05T10:12:00Z"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total": 138, "totalPages": 7 }
+  }
+}
+```
+Each `eventType` maps to a read of an existing table's `createdAt` (or equivalent lifecycle timestamp), not a new stored `ActivityEvent` entity — consistent with `platform-health`/`tutor-performance`'s "computed-on-request, no new source of truth" pattern: `BOOKING` from `Cohort.createdAt`/`adminApprovedAt`, `PAYMENT` from `Payment.createdAt`, `DISPUTE` from `ComplaintReport.createdAt`, `TUTOR_VERIFICATION` from `TutorProfile.verifiedAt`, `REFUND` from `Refund.createdAt`, `PAYOUT` from `Payout.createdAt`. The merged, paginated, chronological view across these six sources is what `getActivityHistory` computes — no cross-table denormalized log is ever written.
+
+**Error responses:** `400` if `dateRange`/`eventType` fails the enum shape (Zod, per 00-api-conventions §0.1).
+
+**Implemented in:** `src/controllers/adminReporting.controller.ts → getActivity` · `src/services/adminReporting.service.ts → getActivityHistory`
+
+---
+
 #### GET /admin/reports/tutor-performance
 
 **H5 fix — new endpoint.** `TutorPerformanceTable.tsx` (Doc 05b's file inventory, Doc 07 §8.5) had no backing data source in earlier drafts; this closes that gap rather than leaving it flagged. Backs UC-91 (FR-AD-022 — tutor performance/badge oversight), reading across `accounts-guardianship`, `class-delivery-library`, `gamification-engagement`, and `support-trust-admin` (soft dependency only, same integration-surface pattern as `platform-health` above — no FK).
