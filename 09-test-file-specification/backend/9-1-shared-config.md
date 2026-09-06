@@ -23,6 +23,8 @@ Per the standing rule in `05a-backend-structure.md` ("every service file gets a 
 | adminAnnouncement.service.ts | FR-AD-019 | — |
 | policy.service.ts | FR-SC-001, FR-AD-015 | NFR-010 (retains full version history, not a privacy risk here since content is public) |
 
+NFR-001, NFR-002, NFR-003, NFR-005, NFR-006, and OWASP A06:2021 are intentionally not claimed by any file in this doc set — see §9.20 for why and what covers them instead.
+
 ---
 
 ### 9.1 Test File Map
@@ -421,6 +423,36 @@ FRs: FR-SC-001, FR-AD-015.
 - **Real bcrypt/JWT cryptographic strength** (cost factor tuning, key rotation) — unit tests confirm the functions are *called* correctly and produce internally-consistent results; production-grade parameter choices (bcrypt rounds, `JWT_SECRET` length/entropy, key rotation policy) are a security-review/config concern, not a unit-test assertion.
 - **Server-side rate limiting on login, resend-verification, or forgot-password** — **explicitly flagged as an open item**: no rate limit is documented anywhere in Docs 02/06/08 for these endpoints. This is a real OWASP A04:2021 (Insecure Design) / brute-force gap worth raising with whoever owns Section 15 (NFRs) before launch — this test suite does not fabricate a rate-limit test for a control that was never specified, but this doc records the gap rather than silently ignoring it (see 9.8's `resendVerification` note and the login brute-force risk generally).
 - **CSRF** — not applicable in the traditional sense; this is a stateless Bearer-JWT API with no cookie-based session, so CSRF tokens are out of scope by design, not by oversight.
+
+---
+
+### 9.20 Non-Functional Requirements & A06:2021 — Out of Scope for This Suite (and why)
+
+The following are deliberately not exercised anywhere in the 09 test-file docs (backend or frontend). Naming them here — rather than leaving them absent from every §9.0 traceability table — closes the one place this doc set's otherwise-consistent "document why, don't just skip" habit (§9.19 above, and the equivalent sections in Docs 9-2 through 9-8) fell silent.
+
+| Requirement | What it says | Why it's out of scope for Vitest/RTL | Covered instead by |
+|---|---|---|---|
+| NFR-001 | Support current major desktop browsers | Cross-browser rendering/behavior can't be meaningfully asserted by a jsdom-based unit/component suite | A cross-browser pass via Playwright or BrowserStack, run separately from this suite |
+| NFR-002 | Mobile web responsive layout | Responsive/viewport behavior is a real-browser layout concern, not a unit-test assertion | The same Playwright/BrowserStack pass as NFR-001, at representative mobile viewport widths |
+| NFR-003 | Core pages load within 3s | Load-time is a real-network/real-build performance measurement, not something a mocked unit test can produce a meaningful number for | Lighthouse CI, run against built pages |
+| NFR-005 | 99.5%+ uptime | Uptime is an operational/infrastructure property of the deployed system, not a property any single test run can assert | Uptime monitoring (e.g. a status-check/alerting service) on the deployed environment |
+| NFR-006 | Maintenance avoids peak hours | This is a scheduling/operations policy, not application code with a testable code path | A documented maintenance-window policy, enforced procedurally, not via test |
+| A06:2021 (Vulnerable and Outdated Components) | Using known-vulnerable dependencies | Dependency vulnerabilities are a property of `package.json`/lockfile contents at a point in time, not of application logic a unit test exercises | CI-integrated dependency scanning (e.g. `npm audit`, Dependabot/Snyk), not a test-file-level case |
+
+NFR-004 (notification dispatch must not block the triggering action) is the one NFR that *is* exercised in this suite — see `notification.service.test.ts` (§9.12) — and is excluded from the table above accordingly.
+
+---
+
+### 9.21 Open Boundary-Condition Decisions (cross-doc punch list)
+
+The following behaviors are correctly left as **"flagged, not hard-asserted"** in their owning docs, because Doc 02/08 don't specify a single required outcome. They're collected here so they get decided once, deliberately, before implementation starts — rather than three different engineers guessing differently:
+
+1. **Re-awarding a badge the student/tutor already has** (`badge.service.ts`, Doc 9-6 §9.4) — no-op, upsert, or `409`?
+2. **Re-closing an already-`CLOSED_BY_ADMIN` message thread** (`messaging`/`adminDispute` flow, Doc 9-5) — no-op or `409`?
+3. **Reschedule boundary at exactly 12.0 hours before class** (Doc 9-4) — inclusive (still free to reschedule) or exclusive (counts as a same-day miss)?
+4. **Jitsi-link submission at exactly 30 minutes before class** (Doc 9-4) — counted as on-time or late?
+
+Whoever starts implementation should confirm each of these with the Doc 02 owner and record the chosen behavior back in the relevant Doc 08 function-level spec, so the "flagged" note in Doc 09 can be resolved into a hard-asserted test case.
 
 ---
 

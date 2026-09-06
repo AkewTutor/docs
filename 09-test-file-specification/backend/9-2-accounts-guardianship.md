@@ -18,7 +18,7 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | availability.service.ts | FR-TU-009 | — |
 | subject.service.ts | FR-AD-013, NFR-011 (extensible catalog) | — |
 | adminTutorVerification.service.ts | FR-TU-004, FR-AD-002 | — |
-| adminPeople.service.ts | FR-AD-001, FR-AD-003, FR-AD-004 (relationship mgmt), FR-MK-003 (escalation intake) | NFR-009, NFR-010 |
+| adminPeople.service.ts | FR-AD-001 (incl. relationship mgmt), FR-AD-003, FR-MK-003 (escalation intake) | NFR-009, NFR-010 |
 
 ---
 
@@ -351,7 +351,7 @@ FRs: FR-TU-004, FR-AD-002.
 
 ### 9.18 Test Case Detail — adminPeople.service.test.ts
 
-FRs: FR-AD-001, FR-AD-003, FR-AD-004, FR-MK-003 (intake). **OWASP: A01:2021 – Broken Access Control.**
+FRs: FR-AD-001 (incl. relationship mgmt), FR-AD-003, FR-MK-003 (intake). **OWASP: A01:2021 – Broken Access Control.**
 
 #### listUsers
 

@@ -16,7 +16,7 @@
 | hooks/useAvailability.ts | FR-TU-009 | — |
 | hooks/useSubjects.ts | FR-AD-013, NFR-011 (extensible catalog) | — |
 | hooks/useAdminTutorVerification.ts | FR-TU-004, FR-AD-002 | NFR-009 |
-| hooks/useAdminPeople.ts | FR-AD-001, FR-AD-003, FR-AD-004 | NFR-009, NFR-010 |
+| hooks/useAdminPeople.ts | FR-AD-001 (incl. relationship mgmt), FR-AD-003 | NFR-009, NFR-010 |
 | pages/InviteActivationPage.tsx | FR-AC-002 (invite path) | NFR-008 |
 | components/SubjectRankingForm.tsx | FR-TU-006 (two-subject cap) | — |
 | components/AvailabilityCalendar.tsx | FR-TU-009 | — |
@@ -48,6 +48,7 @@
 | src/pages/student/AcademicProfilePage.tsx | tests/pages/AcademicProfilePage.test.tsx | non-trivial: two independently-submitted forms |
 | src/pages/tutor/TutorProfilePage.tsx | tests/pages/TutorProfilePage.test.tsx | non-trivial: `verificationStatus` is read-only, never editable |
 | src/pages/tutor/AvailabilityPage.tsx, SubjectRankingPage.tsx | — | thin page wrappers around the components above; covered by the component tests + one smoke test confirming wiring, not separately detailed |
+| src/pages/student/StudentDashboardPage.tsx, tutor/TutorDashboardPage.tsx | — | pure composition of already-tested widgets (see §9.8 dismissal note for FR-SP-011–016/FR-TU-011) — not separately detailed |
 | src/components/StudentSidebar.tsx, TutorSidebar.tsx, ParentSidebar.tsx, AdminSidebar.tsx | tests/components/Sidebars.test.tsx | non-trivial: active-item highlighting per role + logout wiring (grouped into one file, see §9.6) |
 
 ---
@@ -177,6 +178,7 @@
 - **Real drag-and-drop library internals** (`SubjectRankingForm`'s reorder) — the test suite asserts the *result* of a reorder (rank swap), not the drag library's own gesture-recognition correctness, which is that library's responsibility.
 - **The flagged `useCreateSubject`/`useDeactivateSubject` hooks** — per 8-2, these were added to the frontend spec as a probable oversight fix rather than a confirmed design; their test cases are written against the assumed simple-mutation shape but are marked for re-verification once `02-accounts-guardianship-frontend.md` §2.5 is actually updated to include them formally.
 - **Backend-side overlap-detection algorithm correctness** — covered by the backend's own `9-3-matching-cohorts.md`/availability-adjacent suites, not here; this doc only verifies the frontend does not duplicate or contradict that logic.
+- **`src/pages/student/StudentDashboardPage.tsx`, `tutor/TutorDashboardPage.tsx`** (`FR-SP-011–016`, `FR-TU-011`) — deliberately not given a dedicated test file. Both pages are pure composition: upcoming lessons/schedule from `useSessions`, XP/streak/leaderboard summary from `useGamification`, notifications from `useNotifications`, assignments/quizzes/grades from their respective feature hooks, and (student) daily/weekly goals and dashboard access to messages/rewards from those same already-tested hooks. Every data path a dashboard page renders is already asserted at the hook/component level in its owning doc (9-2 for accounts-adjacent widgets, 9-4/9-5/9-6 for lessons/messaging/gamification widgets); a dedicated dashboard suite would only re-assert that composition, not exercise new logic. If a dashboard page later grows page-level logic of its own (e.g. conditional widget ordering, empty-state branching not already covered by a constituent hook/component), it should get a thin smoke test at that point, matching the pattern already used for `AvailabilityPage.tsx`/`SubjectRankingPage.tsx` above.
 
 ---
 

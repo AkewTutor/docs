@@ -13,10 +13,10 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | Source file | FRs covered | NFRs covered |
 |---|---|---|
 | xp.service.ts | FR-SP-039, FR-GA-002, Section 10 v3.2 XP point values | — |
-| badge.service.ts | FR-GA-003, FR-GA-005, FR-AD-004 | — |
+| badge.service.ts | FR-GA-003, FR-GA-005, FR-AD-004, FR-AD-018 (admin badge/achievement management) | — |
 | streak.service.ts | FR-GA-003, FR-GA-006, Section 10 v3.2 streak milestones | — |
 | challenge.schema.ts | FR-SP-040, FR-GA-004 | — |
-| challenge.service.ts | FR-SP-040, FR-GA-004 | — |
+| challenge.service.ts | FR-SP-040, FR-GA-004, FR-AD-018 (admin leaderboard/challenge management) | — |
 
 ---
 
@@ -86,7 +86,7 @@ FRs: FR-SP-039, FR-GA-002, Section 10 v3.2 XP point values. **OWASP: A01:2021 �
 
 ### 9.4 Test Case Detail — badge.service.test.ts
 
-FRs: FR-GA-003, FR-GA-005, FR-AD-004. **OWASP: A01:2021 – Broken Access Control, A04:2021 – Insecure Design (no-rating-derived field is a structural design safety control per FC-01, not an incidental omission).**
+FRs: FR-GA-003, FR-GA-005, FR-AD-004, FR-AD-018 (`adminManageBadges` is the Admin-facing "manage achievements" half of FR-AD-018). **OWASP: A01:2021 – Broken Access Control, A04:2021 – Insecure Design (no-rating-derived field is a structural design safety control per FC-01, not an incidental omission).**
 
 #### awardStudentBadge / awardTutorBadge
 
@@ -157,7 +157,7 @@ FRs: FR-GA-003, FR-GA-006, Section 10 v3.2 streak milestones. **OWASP: none spec
 
 ### 9.8 Test Case Detail — challenge.service.test.ts
 
-FRs: FR-SP-040, FR-GA-004. **OWASP: A01:2021 – Broken Access Control (Admin-only create), A04:2021 – Insecure Design (date-range business rule enforced redundantly at the service layer).**
+FRs: FR-SP-040, FR-GA-004, FR-AD-018 (`createChallenge` is the Admin-facing "manage leaderboards" half of FR-AD-018). **OWASP: A01:2021 – Broken Access Control (Admin-only create), A04:2021 – Insecure Design (date-range business rule enforced redundantly at the service layer).**
 
 #### createChallenge
 

@@ -12,7 +12,7 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 | Source file | FRs covered |
 |---|---|
-| matching.service.ts | FR-MA-001–002, FR-MA-007, FR-MA-012, FR-MA-016–018, FR-SP-025 (uniqueStudentsTaught read), Section 8 v3.2 match-percentage formula |
+| matching.service.ts | FR-MA-001–002, FR-MA-007, FR-MA-012, FR-MA-016–018, FR-SP-025 (uniqueStudentsTaught read), FR-TU-008 (automatic secondary-subject fallback), Section 8 v3.2 match-percentage formula |
 | cohort.service.ts | FR-MA-006, FR-MA-009, FR-MA-011, FR-MA-016, Section 7 v3.0 partial-group-formation, Section 8 tutor-exit continuity + M3 group-splitting worked example, FR-SP-030 (profile-visibility split) |
 | adminMatching.service.ts | FR-MA-003–004, FR-MA-008, FR-MA-010, FR-MA-013–015, FR-MA-017, FR-AD-005–008, Section 11.3 stale-booking-approval rules |
 | formatSwitch.service.ts | FR-SP-045–049 |
@@ -57,7 +57,7 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 ### 9.3 Test Case Detail — matching.service.test.ts
 
-FRs: FR-MA-001–002, FR-MA-007, FR-MA-012, FR-MA-016–018, FR-SP-025, Section 8 v3.2 match-percentage formula. **OWASP: A01:2021 – Broken Access Control (parent-on-behalf-of studentId scoping mirrors 9-2's pattern), A04:2021 – Insecure Design (matching correctness has direct fairness/business-integrity implications).**
+FRs: FR-MA-001–002, FR-MA-007, FR-MA-012, FR-MA-016–018, FR-SP-025, FR-TU-008, Section 8 v3.2 match-percentage formula. **OWASP: A01:2021 – Broken Access Control (parent-on-behalf-of studentId scoping mirrors 9-2's pattern), A04:2021 – Insecure Design (matching correctness has direct fairness/business-integrity implications).**
 
 #### searchOneToOneTutors
 
@@ -70,6 +70,8 @@ FRs: FR-MA-001–002, FR-MA-007, FR-MA-012, FR-MA-016–018, FR-SP-025, Section 
 | Only VERIFIED tutors appear | mock a `PENDING` tutor who otherwise matches every filter | call `searchOneToOneTutors(...)` | the unverified tutor is absent — confirms `adminTutorVerification`'s approval gate is actually enforced in the query, not just assumed |
 | Zero results is a 200, not a 404 | mock zero qualifying tutors | call `searchOneToOneTutors(...)` | resolves `{ tutors: [] }`, does not throw — this is what surfaces "No Exact Match" client-side, per §0.3 |
 | Grade is always a hard match | mock a tutor whose ranked subject applies (any grade per FR-TU-006) but query grade doesn't overlap the student's actual need — **clarify**: since a tutor's ranked subject spans all of Grades 1–12, this case instead verifies the *student's stated* `grade` param is passed through to the query filter, not silently ignored | call `searchOneToOneTutors(..., { grade: 4 })` twice with different grade values | assert the Prisma query filter reflects the passed grade each time — grade always participates in the query even though it never disqualifies a tutor by ranked-subject grade-range (there is none) |
+| Primary-subject search with results never falls back to secondary-subject tutors (FR-TU-008) | mock ≥1 tutor with `rank = 1` for the student's primary subject/grade, plus a separate tutor who only qualifies via `rank = 2` (secondary) for that same subject/grade | call `searchOneToOneTutors(callerId, 'STUDENT', undefined, filters)` | resolves only the `rank = 1` tutor(s) — the secondary-ranked tutor is **absent**; a primary-subject match must never trigger the secondary-subject fallback |
+| Primary-subject search with zero results automatically falls back to secondary-subject tutors (FR-TU-008) | mock zero tutors with `rank = 1` for the student's subject/grade, and ≥1 tutor with `rank = 2` for the same subject/grade | call `searchOneToOneTutors(callerId, 'STUDENT', undefined, filters)` | resolves `{ tutors: [...] }` including the `rank = 2` tutor(s) — the system automatically re-queries against secondary-subject rankings in the same call/response, with no separate Admin- or client-triggered action required |
 
 #### recommendTutorsWithMatchPercent
 
