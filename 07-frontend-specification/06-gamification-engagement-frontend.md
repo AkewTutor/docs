@@ -1,0 +1,159 @@
+## Project: AKEWTutor — Frontend Specification
+**Feature:** Gamification & Engagement
+**Conventions:** see `0-frontend-conventions.md`.
+**API reference:** `06-gamification-engagement-api.md`
+
+**Depends on:** Accounts & Guardianship (hard); soft-integrates with Class Delivery & Library (XP-award trigger on class-attended — no client-facing coupling at all, since the award happens entirely server-side).
+
+---
+
+### 6.1 Routes
+
+```
+/student/achievements  → ProtectedRoute(['STUDENT']) → DashboardLayout(StudentSidebar) → AchievementsPage
+/student/leaderboard    → ProtectedRoute(['STUDENT','PARENT']) → DashboardLayout → LeaderboardPage
+/student/challenges      → ProtectedRoute(['STUDENT']) → DashboardLayout(StudentSidebar) → ChallengesPage
+/admin/badges             → ProtectedRoute(['ADMIN']) → DashboardLayout(AdminSidebar) → BadgeManagementPage
+/admin/challenges          → ProtectedRoute(['ADMIN']) → DashboardLayout(AdminSidebar) → ChallengeManagementPage
+```
+
+`LeaderboardPage` is the one page in this feature reachable by Parent as well as Student, matching the API's `Student|Parent` auth label on `GET /gamification/leaderboard` (a Parent viewing their child's grade ranking) — every other route here is Student-only, since XP/badges/challenges belong to the student's own account, not something a Parent separately drives.
+
+### 6.2 Types (added to src/types/index.ts)
+
+```typescript
+export interface XPProgress {
+  totalXP: number;
+  streak: { currentStreakDays: number; longestStreakDays: number; lastActivityDate: string };
+  recentEntries: { amount: number; reason: string; createdAt: string }[];
+}
+
+export interface LeaderboardEntry { rank: number; displayName: string; xp: number }
+
+export interface Leaderboard {
+  grade: number;
+  period: 'WEEKLY' | 'MONTHLY';
+  rankings: LeaderboardEntry[];
+  callerRank: number;
+}
+
+export interface Badge {
+  badgeId: string;
+  name: string;
+  description: string;
+  earnedAt: string;
+}
+
+export interface AdminBadge {
+  id: string;
+  name: string;
+  category: 'STUDENT' | 'TUTOR';
+  criteriaDescription: string;
+  isActive: boolean;
+}
+
+export interface Challenge {
+  id: string;
+  title: string;
+  period: 'WEEKLY' | 'MONTHLY';
+  startsAt: string;
+  endsAt: string;
+  targetValue: number;
+}
+
+export interface ChallengeProgress { challengeId: string; progressValue: number; completedAt: string | null }
+```
+
+### 6.3 Hooks (src/hooks/useGamification.ts)
+
+```typescript
+export function useMyProgress() {
+  return useQuery({
+    queryKey: [QUERY_KEYS.XP_PROGRESS],
+    queryFn: () => api.get<XPProgress>('/gamification/xp/me').then((r) => r.data),
+  });
+}
+
+export function useLeaderboard(period: 'WEEKLY' | 'MONTHLY', studentId?: string) {
+  return useQuery({
+    queryKey: [QUERY_KEYS.LEADERBOARD, period, studentId],
+    queryFn: () => api.get<Leaderboard>('/gamification/leaderboard', { params: { period, studentId } }).then((r) => r.data),
+  });
+}
+```
+
+### 6.4 Hooks (src/hooks/useBadges.ts)
+
+```typescript
+export function useMyBadges() {
+  return useQuery({
+    queryKey: [QUERY_KEYS.MY_BADGES],
+    queryFn: () => api.get<{ badges: Badge[] }>('/gamification/badges/me').then((r) => r.data),
+  });
+}
+```
+
+### 6.5 Hooks (src/hooks/useAdminGamification.ts)
+
+```typescript
+export function useAllBadges(category?: 'STUDENT' | 'TUTOR', page = 1) {
+  return useQuery({
+    queryKey: [QUERY_KEYS.ADMIN_BADGES, category, page],
+    queryFn: () => api.get('/admin/badges', { params: { category, page, limit: 20 } }).then((r) => r.data),
+  });
+}
+
+export function useAdjustBadge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ badgeId, ...body }: { badgeId: string; criteriaDescription?: string; isActive?: boolean }) =>
+      api.patch<AdminBadge>(`/admin/badges/${badgeId}`, body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [QUERY_KEYS.ADMIN_BADGES] }),
+  });
+}
+```
+
+### 6.6 Hooks (src/hooks/useChallenges.ts)
+
+```typescript
+export function useActiveChallenges() {
+  return useQuery({
+    queryKey: [QUERY_KEYS.CHALLENGES],
+    queryFn: () => api.get<{ challenges: Challenge[] }>('/gamification/challenges').then((r) => r.data),
+  });
+}
+
+export function useMyChallengeProgress() {
+  return useQuery({
+    queryKey: [QUERY_KEYS.CHALLENGE_PROGRESS],
+    queryFn: () => api.get<{ progress: ChallengeProgress[] }>('/gamification/challenges/me').then((r) => r.data),
+  });
+}
+
+export function useCreateChallenge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { title: string; description: string; period: 'WEEKLY' | 'MONTHLY'; startsAt: string; endsAt: string; targetValue: number }) =>
+      api.post<Challenge>('/admin/challenges', body).then((r) => r.data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [QUERY_KEYS.CHALLENGES] }),
+  });
+}
+```
+
+### 6.7 Components
+
+| File | Responsibility |
+|---|---|
+| `XPProgressBar.tsx` | Current XP / level display from `useMyProgress` |
+| `BadgeGrid.tsx` | Earned badges from `useMyBadges`; `EmptyState` (foundation component) when none earned yet |
+| `StreakFlame.tsx` | Current/longest streak; **must not visually imply lost XP or lost badges on a streak reset** — `totalXP` is a separate field and is never reduced by `currentStreakDays` resetting (per the API's explicit note) |
+| `LeaderboardTable.tsx` | Grade-scoped ranking; renders `displayName` exactly as returned (first name + last-initial) — **never appends or reconstructs a full last name client-side**, even if the caller happens to know it (e.g. a Parent viewing their own child's row) |
+| `ChallengeCard.tsx` | One active challenge + the caller's `progressValue`/`targetValue`, cross-referencing `useActiveChallenges` and `useMyChallengeProgress` by `challengeId` |
+
+### 6.8 Notes on Data Freshness
+
+The leaderboard is computed live from the XP ledger server-side, never denormalized (per the API's design note) — the frontend should treat `useLeaderboard` as a plain, non-optimistic read (no local cache mutation on XP-earning actions elsewhere in the app) since there's no client-side way to predict the *rank* impact of a new XP entry, only the raw amount.
+
+---
+
+**Next:** proceed to → [07. Payments & Earnings Frontend]
