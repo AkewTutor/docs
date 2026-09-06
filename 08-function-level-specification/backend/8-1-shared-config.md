@@ -1,7 +1,7 @@
 ## Project: AKEWTutor — Backend Function-Level Spec: Shared Config (Auth, Notifications, Policies, Announcements)
 **Conventions:** see `00-api-conventions.md` §0.1–0.7. **API reference:** `01-shared-config-api.md`. **Folder/file reference:** `05a-backend-structure.md` §0 (cross-cutting), §1 (shared-config).
 
-Covers every backend file not owned by a single feature — Prisma schema/seed, cross-cutting middleware and utils, job scheduler registration — plus shared-config's own owned files (auth, notifications, policies, admin announcements). Shared-config is the foundation feature (Doc 07 §1.1's "no dependency of any kind"), which is why the cross-cutting infra is documented here rather than in its own separate file.
+Covers every backend file not owned by a single feature — Prisma schema/seed, cross-cutting middleware and utils, job scheduler registration — plus shared-config's own owned files (auth, notifications, policies, admin announcements). Shared-config is the foundation feature (Feature Decomposition §1.1's "no dependency of any kind"), which is why the cross-cutting infra is documented here rather than in its own separate file.
 
 ---
 
@@ -241,9 +241,9 @@ Called only from `notification.service.ts` and `auth.service.ts` — neither has
 
 | Field | Detail |
 |---|---|
-| Signature | `dispatchNotification(userId: string, type: NotificationType, payload: object): Promise<void>` |
+| Signature | `dispatchNotification(userId: string, type: NotificationType, payload: object): Promise<void>` — `type` values are the canonical `NotificationType` list now defined in Doc 04's `Notification` entity notes (L2 fix). |
 | Purpose | Single entry point every other feature calls to notify a user — writes one `Notification` row per targeted user and routes delivery by `User.preferredNotificationChannel`. |
-| Side effects | Creates `Notification(status: PENDING)`, then calls `sms.client.ts`/`email.client.ts`/a push provider depending on channel; on success sets `status: SENT, sentAt`; on failure sets `status: FAILED` for `notificationRetry.job.ts` to pick up later. |
+| Side effects | Creates `Notification(status: QUEUED)` (Doc 04's actual `NotificationStatus` default — corrected here from an earlier draft's `PENDING`, which isn't a value in that enum), then calls `sms.client.ts`/`email.client.ts`/a push provider depending on channel; on success sets `status: SENT, sentAt`; on failure sets `status: FAILED` for `notificationRetry.job.ts` to pick up later. |
 | Edge cases | This function never throws back into the caller — a downstream delivery failure must never block the business action that triggered it (e.g. a failed SMS must not roll back a completed class session). All error handling here terminates in a `FAILED` row, not a re-thrown exception. |
 
 Test file: `tests/services/notification.service.test.ts` — covers both delivery success and swallowed-failure-writes-FAILED-row paths.

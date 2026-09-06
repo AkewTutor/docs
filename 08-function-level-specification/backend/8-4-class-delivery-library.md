@@ -18,9 +18,9 @@
 | Field | Detail |
 |---|---|
 | Signature | `generateSessionsForCohort(cohortId: string): Promise<{ created: number }>` |
-| Purpose | Not a client-facing endpoint — called once a `Cohort` reaches `PENDING_PAYMENT`/is confirmed, generating the recurring `ScheduledSession` rows from the tutor's matched `AvailabilitySlot`(s) for the agreed cadence. |
-| Side effects | Bulk `createMany` of `ScheduledSession(status: SCHEDULED)` rows for the cohort's billing cycle. |
-| Edge cases | Must not double-generate if called twice for the same cohort/cycle — guarded by checking for existing sessions in the target window before inserting. |
+| Purpose | Not a client-facing endpoint — called once a `Cohort` reaches `PENDING_PAYMENT`/is confirmed. First sets `Cohort.sessionsPerWeek` from the count of distinct recurring `AvailabilitySlot` rows matched into this Cohort's schedule (Doc 02 §7 v3.2 callout, Doc 04 `Cohort.sessionsPerWeek`), then generates `sessionsPerWeek × 4` recurring `ScheduledSession` rows (one 28-day billing cycle) from those same matched slots. |
+| Side effects | Sets `Cohort.sessionsPerWeek` (once, if not already set). Bulk `createMany` of `ScheduledSession(status: SCHEDULED)` rows for the cohort's 28-day billing cycle — `sessionsPerWeek × 4` rows per cycle, one call per cycle rollover. |
+| Edge cases | Must not double-generate if called twice for the same cohort/cycle — guarded by checking for existing sessions in the target window before inserting. Must not overwrite an already-set `sessionsPerWeek` on a re-run (e.g. a retried call after a partial failure) — cadence is frozen at first successful confirmation per Doc 04. |
 
 Test file: `tests/services/session.service.test.ts`
 
@@ -140,7 +140,7 @@ Used by `recording.service.ts` and `library.service.ts`. Test file mocks the und
 |---|---|
 | Signature | `uploadRecording(tutorId: string, sessionId: string, file: Buffer): Promise<RecordingDTO>` |
 | Purpose | Tutor uploads a session recording; auto-routes it to the correct student's Library — no manual filing step. |
-| Throws | `ApiError(403, "Not authorized to upload a recording for this session")` — caller not the session's assigned tutor. `ApiError(409, "Recording consent must be acknowledged by both parties before this session can be recorded")` — blocked at this layer if `recordingConsent.service.ts → getConsentStatus` for the pairing is not `consentComplete: true` (only relevant for a pairing's first session). |
+| Throws | `ApiError(403, "Not authorized to upload a recording for this session")` — caller not the session's assigned tutor. `ApiError(409, "Recording consent must be acknowledged by both parties for every active student before this session can be recorded")` — blocked unless `recordingConsent.service.ts → getConsentStatus` returns `consentComplete: true` for **every currently-`ACTIVE` `CohortMembership`'s pairing** on this session's Cohort, not just one. For a 1-to-1 Cohort this is the single pairing (only relevant for that pairing's first session); for a 1-to-3/1-to-5 Cohort this is every active member's individual pairing, re-checked at each upload (a mid-cycle new joiner whose consent isn't yet complete blocks future uploads for the whole class, not just their own access to past ones). |
 | Side effects | Encodes/stores at 720p via `storage.client.ts`; sets `expiresAt` to +90 days from upload; `keepPermanently: false` by default. |
 
 Test file: `tests/services/recording.service.test.ts` — includes the consent-gate case and a cross-student-access-denied case (tested via `getSignedUrl` below).

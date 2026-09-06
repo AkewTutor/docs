@@ -31,8 +31,8 @@ No hook in this feature needs a full block beyond these tables — every one is 
 
 | Field | Detail |
 |---|---|
-| Route | `/student/achievements` — `ProtectedRoute(['STUDENT'])` + `DashboardLayout(StudentSidebar)` |
-| Behavior | 1. `useMyProgress()` renders `XPProgressBar` + `StreakFlame`. 2. `useMyBadges()` renders `BadgeGrid`. |
+| Route | `/student/achievements` — **H3 fix:** `ProtectedRoute('any')` (was `['STUDENT']`) + `DashboardLayout` — reachable by Student or Parent per FR-SP-014/UC-14, matching the existing shared-route pattern used by `/payments`, `/library`, etc. (Doc 07 §0.2). Sidebar entry point differs by role (`StudentSidebar` links directly; `ParentSidebar` links to the same route with a child selector when the Parent has more than one linked student — same one-per-child pattern as `PaymentReminderBanner`, Doc 07 §7.6). |
+| Behavior | 1. For `STUDENT`, calls `useMyProgress()` / `useMyBadges()` with no `studentId` (resolves to self server-side). 2. For `PARENT`, resolves the active child via a `studentId` selector (defaulting to the first linked `ACTIVE` `ParentStudentRelationship` if only one exists, otherwise a dropdown — same selector pattern already needed for multi-child payment views) and passes that `studentId` through to `useMyProgress(studentId)` / `useMyBadges(studentId)`. 3. `useMyProgress()` renders `XPProgressBar` + `StreakFlame`. 4. `useMyBadges()` renders `BadgeGrid`. |
 
 **States:** loading · success (empty sub-states handled per-component below, not at the page level)
 
@@ -86,9 +86,9 @@ No hook in this feature needs a full block beyond these tables — every one is 
 
 | Field | Detail |
 |---|---|
-| Route | `/student/challenges` — `ProtectedRoute(['STUDENT'])` + `DashboardLayout(StudentSidebar)` |
+| Route | `/student/challenges` — **H3 fix:** `ProtectedRoute('any')` (was `['STUDENT']`) + `DashboardLayout` — Parent-reachable with the same child-selector pattern as `AchievementsPage` above. |
 | `ChallengeCard` props | `{ challenge: Challenge; progress: ChallengeProgress \| undefined }` |
-| Behavior (page) | 1. `useActiveChallenges()` and `useMyChallengeProgress()` fired together. 2. Cross-references the two lists by `challengeId` — `progress` passed to each `ChallengeCard` is `progressList.find(p => p.challengeId === challenge.id)`, which may be `undefined` if the student hasn't started that challenge yet. |
+| Behavior (page) | 1. Resolves `studentId` per the Student/Parent split described under `AchievementsPage` above (`undefined` for Student, selected child for Parent). 2. `useActiveChallenges()` (no `studentId` — same list for everyone) and `useMyChallengeProgress(studentId)` fired together. 3. Cross-references the two lists by `challengeId` — `progress` passed to each `ChallengeCard` is `progressList.find(p => p.challengeId === challenge.id)`, which may be `undefined` if the student hasn't started that challenge yet. |
 | Behavior (card) | Renders `progress?.progressValue ?? 0` against `challenge.targetValue` as a progress bar; renders a completed badge/checkmark once `progress?.completedAt` is non-null, and freezes further visual progress updates at that point (a completed challenge's bar does not continue animating past 100% even if some later, unrelated activity happens to bump a value server-side). |
 | Test file | `tests/components/ChallengeCard.test.tsx` |
 

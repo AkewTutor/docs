@@ -62,7 +62,7 @@ The base template assumes a binary world: logged in or not, one kind of authenti
 
 Per the template's own rule (already carried into Doc 05b's structuring principle): every route is nested under the correct guard **and** the correct layout — never bare, and never a role-exclusive page reachable through a shared-path route.
 
-> ⚠️ **Flagged gap, not silently resolved:** Doc 05b §9 lists `StudentSidebar.tsx`, `TutorSidebar.tsx`, and `AdminSidebar.tsx` as `DashboardLayout` dependencies, but no `ParentSidebar.tsx` — even though Parent is a fourth distinct role with materially different pages (guardianship management, a different payment-history scope, no subject-ranking or availability screens). This file assumes a `ParentSidebar.tsx` is needed and specifies it in `02-accounts-guardianship-frontend.md` (where the Parent-exclusive pages live), rather than routing Parent through `StudentSidebar` with conditional items. **Please confirm this against whoever owns Doc 05b/10 before treating it as settled** — the alternative (a shared sidebar with role-conditional sections) is also workable and would change §0.7 below.
+> ✅ **M2 fix — resolved, not just flagged:** Doc 05b's file inventory now lists `ParentSidebar.tsx` alongside `StudentSidebar.tsx`/`TutorSidebar.tsx`/`AdminSidebar.tsx` as a `DashboardLayout` dependency. Parent is a fourth distinct role with materially different pages (guardianship management, a different payment-history scope, no subject-ranking or availability screens), so it gets its own sidebar file rather than routing Parent through `StudentSidebar` with conditional items — specified in `02-accounts-guardianship-frontend.md` where the Parent-exclusive pages live.
 
 ---
 
@@ -99,7 +99,7 @@ Because there is a single shared `LoginPage.tsx` (see §0.1) rather than per-rol
 1. Clear `auth.store.ts` (token + user).
 2. Redirect to `/login?returnTo=<currentPath>`, so `LoginPage` can send the person back to whatever role-scoped or shared page they were on after re-authenticating.
 
-This is simpler than Doc 05b §9's phrasing ("redirects to the correct login route based on the failing request's role prefix") might suggest at first read — there's no branching between multiple login *routes*, only a `returnTo` param carried through the one route that exists. **Flagging this as a simplification of Doc 05b's stated approach, not a silent override — worth a quick confirmation that a single `/login?returnTo=` design was the intent, versus something more elaborate.**
+**M8 fix — resolved, not just flagged:** Doc 05b's file inventory previously described this as "redirects to the correct login route based on the failing request's role prefix," which read as multiple login routes. Corrected directly in `05b-frontend-structure.md`: there's no branching between multiple login *routes*, only a `returnTo` param carried through the single route that exists — matching the behavior described here exactly. Both docs now describe the same single `/login?returnTo=` design.
 
 ---
 
@@ -107,7 +107,7 @@ This is simpler than Doc 05b §9's phrasing ("redirects to the correct login rou
 
 - `components/ui/` — shadcn/ui primitives, untouched, no app logic
 - `components/common/` — shared, feature-agnostic pieces (`StatusBadge`, `EmptyState`, `CountdownTimer`, `TopNavBar`, `Footer`, `NotificationBell`) — per `10-ui-foundation-spec.md` and Doc 05b §1
-- `components/layouts/` — `PublicLayout`, `AuthLayout`, `DashboardLayout` (the last composing `StudentSidebar` / `ParentSidebar` (§0.2 flag) / `TutorSidebar` / `AdminSidebar` based on `auth.store.ts`'s `role`)
+- `components/layouts/` — `PublicLayout`, `AuthLayout`, `DashboardLayout` (the last composing `StudentSidebar` / `ParentSidebar` / `TutorSidebar` / `AdminSidebar` based on `auth.store.ts`'s `role` — `ParentSidebar` per the M2 fix in §0.2 above, no longer a flagged open question)
 - `components/<feature>/` and `components/admin-<feature>/` — one folder per feature for feature-specific and admin-specific components respectively (Doc 05b already separates these, e.g. `components/matching/` vs `components/admin-matching/`), carried forward unchanged in Docs 01–08 below.
 
 Each of Docs 01–08 below specifies, per its feature: exact routes, TypeScript interfaces, hook signatures (query keys, mutation shapes, `enabled`/`refetchInterval` behavior), component responsibilities, and any form validation that mirrors a backend business rule beyond basic Zod shape — the same level of detail already modeled in Docs 05-messaging-api.md and 06-gamification-engagement-api.md's endpoint-detail sections, translated to the frontend side of the same contract.

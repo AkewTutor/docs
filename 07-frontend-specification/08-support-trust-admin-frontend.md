@@ -62,6 +62,25 @@ export interface PlatformHealth {
   pendingPayoutBatches: number;
   generatedAt: string;
 }
+
+// H5 fix: backs the new GET /admin/reports/tutor-performance endpoint.
+export interface TutorPerformanceRow {
+  tutorId: string;
+  fullName: string;
+  verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  uniqueStudentsTaught: number;
+  activeCohortCount: number;
+  completedSessionCount: number;
+  tutorCausedMissCount: number;
+  badgeCount: number;
+  complaintCount: number;
+  createdAt: string;
+}
+
+export interface TutorPerformancePage {
+  tutors: TutorPerformanceRow[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}
 ```
 
 ### 8.3 Hooks (src/hooks/useComplaints.ts)
@@ -127,7 +146,7 @@ export function useResolveDispute() {
       status: 'UNDER_REVIEW' | 'RESOLVED' | 'DISMISSED';
       resolutionAction?: ResolutionAction;
       resolutionNotes: string;
-      refundAmount?: string;
+      affectedCohortMembershipId?: string; // H4 fix: replaces refundAmount — server computes the amount
     }) => api.patch(`/admin/disputes/${complaintId}`, body),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: [QUERY_KEYS.DISPUTE_QUEUE] });
@@ -143,6 +162,14 @@ export function usePlatformHealth() {
     refetchInterval: 60_000,
   });
 }
+
+export function useTutorPerformance(params: { page?: number; limit?: number; sortBy?: string; verificationStatus?: string }) {
+  // H5 fix: new hook backing the previously-unbacked TutorPerformanceTable.
+  return useQuery({
+    queryKey: [QUERY_KEYS.TUTOR_PERFORMANCE, params],
+    queryFn: () => api.get<TutorPerformancePage>('/admin/reports/tutor-performance', { params }).then((r) => r.data),
+  });
+}
 ```
 
 ### 8.5 Components
@@ -150,14 +177,14 @@ export function usePlatformHealth() {
 | File | Responsibility |
 |---|---|
 | `ComplaintForm.tsx` | Category select + description + optional related-entity picker (session/payment/cohort); mirrors the backend's business rule that a non-`OTHER` category requires at least one related entity, disabling submit until satisfied rather than only surfacing the 400 after the fact |
-| `DisputeCard.tsx` (admin) | One dispute; shows linked context (`relatedThreadId` → link to `MessageThreadReviewPage`, 05-messaging-frontend.md §5.1; `relatedSessionId` → link to session detail, 04-class-delivery-library-frontend.md) and the resolution form (`status`, `resolutionAction`, `resolutionNotes`, conditionally `refundAmount`) |
+| `DisputeCard.tsx` (admin) | One dispute; shows linked context (`relatedThreadId` → link to `MessageThreadReviewPage`, 05-messaging-frontend.md §5.1; `relatedSessionId` → link to session detail, 04-class-delivery-library-frontend.md) and the resolution form (`status`, `resolutionAction`, `resolutionNotes`, conditionally `affectedCohortMembershipId` with a server-computed amount preview — H4 fix) |
 | `AdminSidebar.tsx` | Existing per Doc 05b — admin-wide nav, used by `DashboardLayout` for the Admin role (already specified in `02-accounts-guardianship-frontend.md` §2.7; not re-specified here, only referenced since this feature adds nav entries to it: Disputes, Reports) |
 | `PlatformStatsGrid.tsx` | Renders `usePlatformHealth`'s four counters as headline stat cards |
-| `TutorPerformanceTable.tsx` | Tutor performance/badge history — **note:** this component's data source is not directly covered by any endpoint in `08-support-trust-admin-api.md`; `GET /admin/reports/platform-health` returns only aggregate counts, not a per-tutor table. This is a gap between Doc 05b's file inventory (which lists this component under this feature) and the actual API surface — **flagging rather than inventing an endpoint:** either a `GET /admin/reports/tutor-performance`-style endpoint needs adding to `08-support-trust-admin-api.md`, or this component's data should instead come from `06-gamification-engagement-api.md`'s `GET /admin/badges` (badge award history) combined with Accounts & Guardianship's admin-people list — worth resolving with whoever owns Doc 06/07 API before this component is built. |
+| `TutorPerformanceTable.tsx` | Tutor performance/badge history, sourced from `GET /admin/reports/tutor-performance` (H5 fix — endpoint added to `08-support-trust-admin-api.md`; this closes the gap previously flagged here) via `useTutorPerformance()`. Paginated table: name, verification status, `uniqueStudentsTaught`, active cohort count, completed sessions, tutor-caused misses, badge count, complaint count. |
 
 ### 8.6 Resolution Form Behavior
 
-`DisputeCard`'s resolution form should conditionally require fields exactly as the API does (00-api-conventions §0.1's validation pattern, business rules beyond Zod shape called out per-endpoint): `resolutionAction` is required once `status` is set to `RESOLVED`; `refundAmount` is required only when `resolutionAction` is `REFUND_ISSUED`. The form should disable the `TUTOR_SUSPENDED` and `REFUND_ISSUED` options with an inline note if the admin lacks the corresponding related-entity context (e.g. `TUTOR_SUSPENDED` without a resolvable tutor from `relatedSessionId`'s cohort) — this is a UX guard, not a substitute for the backend's own validation.
+`DisputeCard`'s resolution form should conditionally require fields exactly as the API does (00-api-conventions §0.1's validation pattern, business rules beyond Zod shape called out per-endpoint): `resolutionAction` is required once `status` is set to `RESOLVED`; `affectedCohortMembershipId` is required only when `resolutionAction` is `REFUND_ISSUED` — **H4 fix:** this replaces a free-text `refundAmount` field; the form selects *which* membership's billing cycle to prorate, and the resulting amount is computed and previewed, never typed in. The form should disable the `TUTOR_SUSPENDED` and `REFUND_ISSUED` options with an inline note if the admin lacks the corresponding related-entity context (e.g. `TUTOR_SUSPENDED` without a resolvable tutor from `relatedSessionId`'s cohort) — this is a UX guard, not a substitute for the backend's own validation.
 
 ---
 

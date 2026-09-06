@@ -2,7 +2,7 @@
 **Feature:** Accounts & Guardianship (Students, Parents, Tutors, Subjects, Availability)
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md`.
 
-**Owns:** StudentProfile, ParentProfile, TutorProfile, ParentStudentRelationship, Subject, TutorSubjectRanking, AvailabilitySlot. **Depends on:** Shared Config (hard, per Doc 07 §1.1).
+**Owns:** StudentProfile, ParentProfile, TutorProfile, ParentStudentRelationship, Subject, TutorSubjectRanking, AvailabilitySlot. **Depends on:** Shared Config (hard, per Feature Decomposition §1.1).
 
 ---
 

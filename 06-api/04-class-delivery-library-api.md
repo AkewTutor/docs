@@ -2,7 +2,7 @@
 **Feature:** Class Delivery, Recording & Library
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md`. See also 0.4 — the recording-missing escalation and the payment-pause reschedule are job-driven, exposed here only as read state.
 
-**Owns:** ScheduledSession, RescheduleRequest, SessionMiss, RecordingConsent, Recording, LibraryMaterial, WeeklyAssessment. **Depends on:** Matching & Cohorts (hard, per Doc 07 §1.1) — every session belongs to a confirmed `Cohort`.
+**Owns:** ScheduledSession, RescheduleRequest, SessionMiss, RecordingConsent, Recording, LibraryMaterial, WeeklyAssessment. **Depends on:** Matching & Cohorts (hard, per Feature Decomposition §1.1) — every session belongs to a confirmed `Cohort`.
 
 ---
 
@@ -259,7 +259,7 @@ No sessions yet (student still matching) returns `sessions: []` — not an error
 
 #### POST /recordings
 
-**Purpose:** Tutor uploads a session recording (UC-45, UC-46, FR-TU-014, FR-CD-004/005). Blocked at the service layer if consent (per pairing) is not yet complete on both sides (Section 14 Definition of Done #1).
+**Purpose:** Tutor uploads a session recording (UC-45, UC-46, FR-TU-014, FR-CD-004/005). Blocked at the service layer unless consent is complete for **every currently-`ACTIVE` `CohortMembership`'s pairing** on this session's Cohort — one pairing for a 1-to-1 Cohort, up to five for a 1-to-5 Cohort (Doc 04 `RecordingConsent` notes, Section 14 Definition of Done #1).
 
 **Auth:** Tutor — must be the session's assigned tutor.
 

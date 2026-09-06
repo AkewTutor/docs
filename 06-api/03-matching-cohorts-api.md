@@ -2,7 +2,7 @@
 **Feature:** Matching & Cohorts
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md`. See also 0.4 for system-driven state (group-formation window closing, zero-match escalation, stale-approval flags) that has no trigger endpoint of its own.
 
-**Owns:** MatchRequest, TutorExclusion, Cohort, CohortMembership, FormatSwitchRequest. **Depends on:** Accounts & Guardianship (hard, per Doc 07 §1.1) — matching cannot run without a student's academic profile or a tutor's ranked subjects/availability existing first.
+**Owns:** MatchRequest, TutorExclusion, Cohort, CohortMembership, FormatSwitchRequest. **Depends on:** Accounts & Guardianship (hard, per Feature Decomposition §1.1) — matching cannot run without a student's academic profile or a tutor's ranked subjects/availability existing first.
 
 ---
 

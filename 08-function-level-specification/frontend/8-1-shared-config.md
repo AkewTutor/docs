@@ -1,7 +1,7 @@
 ## Project: AKEWTutor — Frontend Function-Level Spec: Shared Config (Auth, Notifications, Policies, Announcements)
 **Conventions:** see `0-frontend-conventions.md`. **API reference:** `01-shared-config-api.md`. **Frontend spec reference:** `01-shared-config-frontend.md`.
 
-Covers every frontend file not owned by a single feature — types, constants, the full routing tree, axios, and the shared layouts — plus this feature's own owned files (auth, notifications, policies, announcements). Shared-config is the foundation feature (Doc 07 §1.1's "no dependency of any kind"), which is why the cross-cutting infra lives here rather than in its own separate file.
+Covers every frontend file not owned by a single feature — types, constants, the full routing tree, axios, and the shared layouts — plus this feature's own owned files (auth, notifications, policies, announcements). Shared-config is the foundation feature (Feature Decomposition §1.1's "no dependency of any kind"), which is why the cross-cutting infra lives here rather than in its own separate file.
 
 ---
 
@@ -148,7 +148,7 @@ The exact leaf routes under each `/student/*`, `/parent/*`, `/tutor/*`, `/admin/
 |---|---|
 | Request interceptor | Attaches `Authorization: Bearer <token>` from `auth.store.ts` on every request when a token is present, per frontend conventions §0.4 — no separate unauthenticated client instance. |
 | Response interceptor (401) | Per frontend conventions §0.6: (1) clear `auth.store.ts` (token + user), (2) redirect to `/login?returnTo=<currentPath>`. |
-| ⚠️ Flagged, not silently resolved | Doc 05b §9 (folder/file structure) describes this interceptor as redirecting "to the correct login route based on the failing request's role prefix (`/students/`, `/tutors/`, `/admin/`)" — implying three or four distinct login destinations. Doc 07 §0.6 already flagged that this is an unnecessary complication given AKEWTutor has a single shared `LoginPage.tsx`, and adopted the simpler `returnTo`-param design instead. **This file implements Doc 07 §0.6's simpler version** (one redirect target, `returnTo` carries the original path) — carrying the flag forward rather than silently picking one interpretation, since whoever owns Doc 05b should confirm this is the intended simplification before Doc 08 is treated as final. |
+| M8 fix — resolved | Doc 05b's file inventory previously described this interceptor as redirecting "to the correct login route based on the failing request's role prefix," implying multiple login destinations. That line is now corrected at the source (`05b-frontend-structure.md`) to match this file and Doc 07 §0.6's single `/login?returnTo=` design — all three docs now agree, nothing left to confirm. |
 | Envelope unwrap | `SuccessResponse`/`ErrorResponse` (00-api-conventions §0.1) unwrapped once in the interceptor so every hook's `.then((r) => r.data)` receives the inner `data` payload directly, not the full envelope. |
 
 ---

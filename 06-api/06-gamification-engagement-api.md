@@ -2,7 +2,7 @@
 **Feature:** Gamification & Engagement
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md`.
 
-**Owns:** XPLedgerEntry, Badge, StudentBadge, TutorBadge, Streak, Challenge, ChallengeProgress. **Depends on:** Accounts & Guardianship (hard, per Doc 07 §1.1); soft-integrates with Class Delivery & Library (XP-award trigger on class-attended — no FK, no direct endpoint dependency).
+**Owns:** XPLedgerEntry, Badge, StudentBadge, TutorBadge, Streak, Challenge, ChallengeProgress. **Depends on:** Accounts & Guardianship (hard, per Feature Decomposition §1.1); soft-integrates with Class Delivery & Library (XP-award trigger on class-attended — no FK, no direct endpoint dependency).
 
 ---
 
@@ -10,13 +10,13 @@
 
 | Method | Path | Auth | Linked Use Case | Linked FR |
 |---|---|---|---|---|
-| GET | /gamification/xp/me | Student | UC-63 | FR-SP-039 |
+| GET | /gamification/xp/me | Student\|Parent | UC-63 | FR-SP-039 |
 | GET | /gamification/leaderboard | Student\|Parent | UC-64 | FR-GA-002 |
-| GET | /gamification/badges/me | Student | UC-63 | FR-GA-003 |
+| GET | /gamification/badges/me | Student\|Parent | UC-63 | FR-GA-003 |
 | GET | /admin/badges | Admin | UC-77 | FR-AD-004 |
 | PATCH | /admin/badges/:badgeId | Admin | UC-77 | FR-AD-004, FR-GA-005 |
-| GET | /gamification/challenges | Student | UC-65 | FR-SP-040, FR-GA-004 |
-| GET | /gamification/challenges/me | Student | UC-65 | FR-SP-040, FR-GA-004 |
+| GET | /gamification/challenges | Student\|Parent | UC-65 | FR-SP-040, FR-GA-004 |
+| GET | /gamification/challenges/me | Student\|Parent | UC-65 | FR-SP-040, FR-GA-004 |
 | POST | /admin/challenges | Admin | UC-65 | FR-GA-004 |
 
 ---
@@ -25,9 +25,14 @@
 
 #### GET /gamification/xp/me
 
-**Purpose:** The caller's XP total, streak, and recent ledger activity (UC-63, FR-SP-039).
+**Purpose:** The caller's (or, for a Parent, their child's) XP total, streak, and recent ledger activity (UC-63, FR-SP-039, FR-SP-014).
 
-**Auth:** Student
+**Auth:** Student|Parent
+
+**Query params:**
+```
+?studentId=uuid (required for Parent; ignored/forbidden for Student — a Student always gets their own data)
+```
 
 **Success response — 200:**
 ```json
@@ -95,9 +100,14 @@ A streak broken by an inactive period resets `currentStreakDays` without deletin
 
 #### GET /gamification/badges/me
 
-**Purpose:** The caller's earned badges (UC-63, FR-GA-003).
+**Purpose:** The caller's (or, for a Parent, their child's) earned badges (UC-63, FR-GA-003, FR-SP-014).
 
-**Auth:** Student
+**Auth:** Student|Parent
+
+**Query params:**
+```
+?studentId=uuid (required for Parent)
+```
 
 **Success response — 200:**
 ```json
@@ -204,7 +214,7 @@ No `rating`-derived field exists on any badge here — `criteriaDescription` is 
 
 **Purpose:** List active weekly/monthly challenges (UC-65, FR-SP-040, FR-GA-004).
 
-**Auth:** Student
+**Auth:** Student|Parent — **H3-consistency fix:** opened to Parent alongside `/gamification/challenges/me`, since the two are always consumed together by `ChallengesPage` (Doc 07 §6.5) and this endpoint carries no student-specific or otherwise sensitive data (just the list of currently-running challenges), so there is no reason to block the one call that would otherwise strand the Parent-facing page half-rendered.
 
 **Success response — 200:**
 ```json
@@ -235,9 +245,14 @@ No `rating`-derived field exists on any badge here — `criteriaDescription` is 
 
 #### GET /gamification/challenges/me
 
-**Purpose:** The caller's progress toward each active challenge (UC-65).
+**Purpose:** The caller's (or, for a Parent, their child's) progress toward each active challenge (UC-65, FR-SP-014).
 
-**Auth:** Student
+**Auth:** Student|Parent
+
+**Query params:**
+```
+?studentId=uuid (required for Parent)
+```
 
 **Success response — 200:**
 ```json

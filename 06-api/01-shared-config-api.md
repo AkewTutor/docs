@@ -2,7 +2,7 @@
 **Feature:** Shared Config (Auth, Notifications, Policies, Announcements)
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md` — base path `/api/v1`, envelopes, auth labels, common errors, pagination.
 
-**Owns:** User, Notification, PolicyDocument. **Depends on:** nothing (foundation feature, per Doc 07 §1.1).
+**Owns:** User, Notification, PolicyDocument. **Depends on:** nothing (foundation feature, per Feature Decomposition §1.1).
 
 ---
 

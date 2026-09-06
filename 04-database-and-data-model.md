@@ -17,6 +17,8 @@ This becomes `prisma/schema.prisma` (or equivalent ORM schema) almost line for l
 - **Stale-approval flags are computed, not stored as a status.** The 48-hour/5-day thresholds in Section 11.3 are derived at query time from `Cohort.createdAt` (or `MatchRequest.createdAt`) vs. now — only the two resulting notification events (`adminOverdueNotifiedAt`, `studentDelayNotifiedAt`) are persisted, purely as an audit trail of when each notification actually fired. This mirrors how the reference project derived pipeline health from `PipelineRun` timestamps instead of storing a redundant status field.
 - **`SessionMiss` is separate from `ScheduledSession.status`.** A session's lifecycle status (scheduled/completed/missed/rescheduled) is distinct from *why* it was missed and *who* caused it — keeping fault attribution in its own table lets the tutor-escalation count (FR-MK-003) and the reduced make-up pay rate (FR-MK-009) both query it independently without overloading one status field with two concerns.
 - **`RecordingConsent` is captured once per tutor–student pairing, not once per session.** This matches FR-SC-008's "one-time acknowledgment... before the first recorded session for that pairing," rather than requiring a fresh consent row for every class.
+- **Session cadence (`Cohort.sessionsPerWeek`) is derived, not negotiated.** Rather than adding a booking-time "pick your schedule" step, cadence falls out of how many of the tutor's recurring `AvailabilitySlot` rows get matched into the Cohort's confirmed schedule, frozen at confirmation. This keeps `AvailabilitySlot` as the single source of truth for scheduling instead of introducing a second, potentially-conflicting cadence input (Section 7 v3.2 callout, Doc 02).
+- **The billing cycle is a fixed 28-day window, not a true calendar month.** This makes `totalSessionsBilled = sessionsPerWeek × 4` exact and deterministic for every Cohort, which a true month (28–31 days, non-integer week count) could not guarantee. User-facing copy says "monthly"; the schema and billing math use the fixed 28-day figure.
 - **No spatial/PostGIS concerns** — unlike the reference project, AKEWTutor has no map or grid component; nothing here needs geographic types.
 - **All monetary fields are `Decimal`, never `Float`.** Prices, revenue splits, refunds, and payouts are real ETB currency, not scientific/statistical values (the opposite emphasis from the reference project, where signal/score values were correctly `Float`) — `Decimal` avoids floating-point rounding error in money math.
 - **Enums are used wherever a fixed, closed set exists** (roles, statuses, `TutoringFormat`, evidence-adjacent categories, etc.), so that Admin-configurable pricing (FR-PR-004) and matching logic always validate against a known, closed format set rather than free text.
@@ -173,6 +175,8 @@ While `onboardingStatus = PENDING`, the application layer restricts this parent 
 **Traces to:** FR-TU-001–005. UC-15, UC-16, UC-18.
 
 No grade-range field exists here or anywhere else on this entity, consistent with FR-TU-006's confirmation that a ranked subject applies across the full Grade 1–12 span.
+
+**M6 fix — `uniqueStudentsTaught`, canonically defined here.** This value is referenced by name across `06-api/03-matching-cohorts-api.md` (tutor recommendation cards), `08-function-level-specification/backend/8-3-matching-cohorts.md`, and `06-api/08-support-trust-admin-api.md` (H5's tutor-performance report), but no prior draft of this data model ever defined where it actually comes from — leaving it ambiguous whether it's a stored counter column or computed on read, which three different implementers could easily resolve three different ways. Settled here: **it is never a stored column on `TutorProfile`.** It is always computed as `COUNT(DISTINCT studentId)` over that tutor's `CohortMembership` rows with `status: COMPLETED` or `ACTIVE` (i.e. every student the tutor has ever actually taught, not just been matched with — a `CohortMembership` that never progressed past a cancelled/pre-payment state does not count). Every endpoint that surfaces this value (`GET /matching/tutors/:tutorId` recommendation detail, `GET /admin/reports/tutor-performance`) computes it fresh via this same aggregate — there is no `uniqueStudentsTaught` column in the Prisma schema, and no code path should ever attempt to increment/decrement one. `uniqueStudentsTaught` is the one and only name for this value platform-wide — no endpoint, DTO, or UI label should call it `totalStudentsTaught`, `studentCount`, or any other variant.
 
 ---
 
@@ -341,6 +345,7 @@ Only ever written for **Path A** rejections — Path C rejections re-enter the a
 | status | Enum (CohortStatus) | required, default `FORMING` (group) or `PENDING_ADMIN_APPROVAL` (1-to-1) | `FORMING \| PENDING_ADMIN_APPROVAL \| PENDING_PAYMENT \| ACTIVE \| ENDED \| CANCELLED` |
 | targetGroupSize | Int? | nullable | `3` or `5`; null for 1-to-1 |
 | groupFormationWindowExpiresAt | DateTime? | nullable | Default 48 hours from first member match; Admin-configurable (Section 7) |
+| sessionsPerWeek | Int? | nullable until confirmed | Set once, at the moment `status` moves to `PENDING_PAYMENT`, from the count of the tutor's distinct recurring `AvailabilitySlot` rows matched into this Cohort's schedule (Section 7 v3.2 callout). Frozen from that point — later edits to the tutor's `AvailabilitySlot` rows do not change it. Drives `generateSessionsForCohort`'s recurrence and is the sole input to `totalSessionsBilled = sessionsPerWeek × 4` used across billing/refunds. |
 | adminApprovedAt | DateTime? | nullable | |
 | adminApprovedById | String? | FK → User.id, nullable | |
 | adminOverdueNotifiedAt | DateTime? | nullable | Set once the 48-hour stale-approval flag fires (Section 11.3) |
@@ -488,6 +493,8 @@ The monthly cap of 2 free reschedules (FR-MK-007) is enforced by counting this s
 **Traces to:** FR-SC-008, FR-SC-009. UC-45.
 
 The application layer blocks `SessionMiss`/`Recording` creation for a pairing's first session until both `tutorAcknowledgedAt` and `studentOrParentAcknowledgedAt` are non-null on the matching row — this is the schema-level enforcement point for the "cannot start a first-ever recorded session before consent" rule (Section 14, Definition of Done #1).
+
+**Group cohorts (1-to-3/1-to-5): every active pairing must be consent-complete, not just one.** `RecordingConsent` is keyed per `(tutorId, studentId)` pairing, so a group cohort's first recording upload requires a distinct, complete `RecordingConsent` row (both `tutorAcknowledgedAt` and `studentOrParentAcknowledgedAt` non-null) for **every currently-`ACTIVE` `CohortMembership`** on that `Cohort` — a 5-student class needs all 5 pairings acknowledged, not just one, before the tutor can upload for that class. This is a deliberate, more conservative reading of FR-SC-008 given the child-safety stakes: it is never acceptable for a recording containing a student to be uploaded before that specific student/parent has consented, regardless of what the rest of the group has done. If a new student joins an already-recording-active group cohort mid-formation-window, that student's own pairing must independently reach consent-complete before any *future* upload — it does not retroactively block or invalidate recordings already made under the previously-complete set, but a hypothetical case where the new student would already appear in a not-yet-uploaded recording should be avoided at the application layer (e.g. by re-checking consent completeness at upload time, not just at session start).
 
 ---
 
@@ -645,7 +652,7 @@ Any `ScheduledSession` whose `scheduledStart` falls between an open `PaymentPaus
 |---|---|---|---|
 | id | String (UUID) | PK, default uuid() | |
 | paymentId | String | FK → Payment.id, required | |
-| reason | Enum (RefundReason) | required | `TUTOR_DROPOUT \| PLATFORM_OUTAGE \| FORMAT_SWITCH \| SESSION_UNDELIVERED` |
+| reason | Enum (RefundReason) | required | `TUTOR_DROPOUT \| PLATFORM_OUTAGE \| FORMAT_SWITCH \| SESSION_UNDELIVERED \| ADMIN_DISPUTE_RESOLUTION` |
 | sessionsRemaining | Int | required | Numerator of the proration formula |
 | totalSessionsBilled | Int | required | Denominator of the proration formula |
 | amount | Decimal | required | ETB — `(sessionsRemaining / totalSessionsBilled) × payment.amount` |
@@ -658,6 +665,8 @@ Any `ScheduledSession` whose `scheduledStart` falls between an open `PaymentPaus
 **Traces to:** FR-AD-012, FR-PB-007, FR-SP-048, Section 03 (Refund Policy), Section 13 (Refund Proration Formula). UC-83, UC-61.
 
 `sessionsRemaining` and `totalSessionsBilled` are both stored explicitly (not just the resulting `amount`) so that every refund is independently auditable against the exact proration formula that produced it — a free make-up session under FR-MK-001 is never counted toward `sessionsRemaining`, since it doesn't consume an extra billed slot.
+
+**H4 fix — `ADMIN_DISPUTE_RESOLUTION` is not a free-amount escape hatch.** A refund issued from `PATCH /admin/disputes/:complaintId` (`resolutionAction: REFUND_ISSUED`) still goes through the exact same `(sessionsRemaining / totalSessionsBilled) × payment.amount` formula and still requires non-nullable `sessionsRemaining`/`totalSessionsBilled` — there is no code path that writes a `Refund` row with a bare admin-supplied amount. `ADMIN_DISPUTE_RESOLUTION` exists only so a dispute-triggered refund is distinguishable from the four session/schedule-driven reasons in reporting and audit, not to bypass the formula. See `06-api/08-support-trust-admin-api.md`'s dispute-resolution endpoint and `08-function-level-specification/backend/8-8-support-trust-admin.md` for exactly how the server derives `sessionsRemaining`/`totalSessionsBilled` from the disputed Cohort's current billing cycle instead of accepting them from the request body.
 
 ---
 
@@ -899,7 +908,7 @@ No `rating`-derived criteria field exists anywhere on this entity — `criteriaD
 |---|---|---|---|
 | id | String (UUID) | PK, default uuid() | |
 | userId | String | FK → User.id, required | |
-| type | Enum (NotificationType) | required | One value per FR-NO-001 through FR-NO-011 event category |
+| type | Enum (NotificationType) | required | See the canonical table below (L2 fix) |
 | payload | Json | required | Event-specific data (e.g., session ID, amount, badge name) |
 | channel | Enum (NotifChannel) | required | `PUSH \| SMS \| EMAIL` |
 | status | Enum (NotificationStatus) | required, default `QUEUED` | `QUEUED \| SENT \| FAILED` |
@@ -914,6 +923,36 @@ No `rating`-derived criteria field exists anywhere on this entity — `criteriaD
 **Traces to:** FR-NO-001 through FR-NO-011. UC-92, UC-93.
 
 Every FR-MK make-up/reschedule event and every new `Message` both write a `Notification` row through this same table (Section 12's Definition of Done #1 and #2) — there is deliberately no separate "message notification" entity, so a single delivery pipeline and a single read/unread model cover every notification type uniformly.
+
+**L2 fix — canonical `NotificationType` values, defined.** No prior draft actually enumerated the values — "one value per FR-NO-001 through FR-NO-011 event category" described a shape, not a list, and only two concrete values (`NEW_MESSAGE`, `COMPLAINT_RESOLVED`) had ever appeared anywhere in the doc set before this fix, both of which are preserved below exactly as already used elsewhere.
+
+| `NotificationType` | FR-NO source | Recipient |
+|---|---|---|
+| `REGISTRATION_COMPLETE` | FR-NO-001 | Student, Parent, or Tutor (whoever registered) |
+| `TUTOR_VERIFICATION_APPROVED` / `TUTOR_VERIFICATION_REJECTED` | FR-NO-001 | Tutor |
+| `MATCH_FOUND` | FR-NO-002 | Student/Parent (1-to-1 recommendation ready, or a group cohort candidate formed) |
+| `MATCH_REJECTED` | FR-NO-002 | Student/Parent (Cross-Path Rules, Section 8 — Admin-rejected booking) |
+| `BOOKING_CONFIRMED` | FR-NO-002/003 | Student, Parent, Tutor |
+| `PAYMENT_RECEIVED` | FR-NO-003 | Student/Parent — the same type is reused for FR-NO-009's "payment confirmation" wording; this is one notification concept, not two separate types for the same event |
+| `CLASS_REMINDER` | FR-NO-004 | Student, Tutor |
+| `CLASS_CANCELLED` | FR-NO-005 | Student, Parent, Tutor |
+| `CLASS_RESCHEDULED` | FR-NO-005 | Student, Parent, Tutor |
+| `MAKEUP_SCHEDULED` | FR-NO-005 | Student, Parent |
+| `ASSESSMENT_AVAILABLE` | FR-NO-006 | Student |
+| `WEEKLY_SUMMARY` | FR-NO-006 | Student, Parent |
+| `RECORDING_AVAILABLE` | FR-NO-007 | Student, Parent |
+| `MATERIAL_UPLOADED` | FR-NO-007 | Student |
+| `BADGE_EARNED` | FR-NO-008 | Student, Tutor |
+| `LEADERBOARD_CHANGE` | FR-NO-008 | Student |
+| `EARNING_CREDITED` | FR-NO-009 | Tutor |
+| `PAYOUT_PROCESSED` | FR-NO-009 | Tutor (UC-70/71) |
+| `COMPLAINT_STATUS_UPDATE` | FR-NO-010 | Student, Parent, Tutor (the reporter — `status` moving to `UNDER_REVIEW`) |
+| `COMPLAINT_RESOLVED` | FR-NO-010 | Student, Parent, Tutor (the reporter — already used in `06-api/08-support-trust-admin-api.md`, unchanged by this fix) |
+| `PLATFORM_ANNOUNCEMENT` | FR-NO-010 | Any role, platform-wide |
+| `NEW_MESSAGE` | FR-NO-011 | Student, Parent, Tutor (already used in `06-api/05-messaging-api.md` and `08-function-level-specification/backend/8-5-messaging.md`, unchanged by this fix) |
+| `ADMIN_REVIEW_REQUIRED` | FR-AD-005 (cross-cutting, not a numbered FR-NO item, but delivered through this same table since Admin is a `User` too) | Admin — covers every "needs Admin attention" case: overdue match approval, zero-match escalation, missing-recording escalation, new dispute filed |
+
+This is the platform-wide canonical list — no endpoint, job, or service should introduce a new `NotificationType` value not on this table without adding it here first.
 
 ---
 

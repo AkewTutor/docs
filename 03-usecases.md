@@ -1396,7 +1396,7 @@
 
 **Main flow:**
 1. User submits details of the complaint/claim/report.
-2. System routes it to Admin's dispute-management queue (UC-88 in Section Q).
+2. System routes it to Admin's dispute-management queue (**M1 fix:** UC-87, *Admin manages complaints and disputes* — corrected from the prior draft's "UC-88 in Section Q," which is actually *Admin manages leaderboards and achievements* and has nothing to do with dispute routing).
 
 **Alternate / error flows:**
 - Required details missing: system prompts for the minimum needed (e.g., which session/thread it relates to).

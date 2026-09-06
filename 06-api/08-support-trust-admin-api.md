@@ -2,9 +2,9 @@
 **Feature:** Support, Trust & Admin Reporting
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md` — base path `/api/v1`, envelopes, auth labels, common errors, pagination.
 
-**Owns:** ComplaintReport. **Depends on:** Shared Config, Messaging, Class Delivery & Library (hard, per Doc 07 §1.1) — a `ComplaintReport` can reference a `MessageThread` or a `ScheduledSession`. **Soft-integrates with:** Payments & Earnings (a refund can be issued as a resolution action, no FK), Accounts & Guardianship (a tutor suspension can be issued as a resolution action, no FK).
+**Owns:** ComplaintReport. **Depends on:** Shared Config, Messaging, Class Delivery & Library (hard, per Feature Decomposition §1.1) — a `ComplaintReport` can reference a `MessageThread` or a `ScheduledSession`. **Soft-integrates with:** Payments & Earnings (a refund can be issued as a resolution action, no FK), Accounts & Guardianship (a tutor suspension can be issued as a resolution action, no FK).
 
-> ℹ️ Corrected against Doc 02 (Requirements) and Doc 03 (Use Cases) directly — the placeholder IDs from the first draft of this file have been replaced with the actual UC/FR references below. One inconsistency in the source docs is worth flagging rather than silently resolving: UC-66's main flow states it routes to "UC-88 in Section Q," but UC-88 is actually *Admin manages leaderboards and achievements* — the use case that actually matches the dispute-queue description is **UC-87** (*Admin manages complaints and disputes*, FR-AD-017), which is what this file links to below. **Worth confirming with whoever owns Doc 03 whether UC-66's cross-reference is a typo for UC-87.**
+> ℹ️ **M1 fix — resolved, not just flagged:** Doc 03's UC-66 main flow originally said it routes to "UC-88 in Section Q," a typo — UC-88 is *Admin manages leaderboards and achievements*, unrelated to disputes. Corrected directly in `03-usecases.md`: UC-66 now points to **UC-87** (*Admin manages complaints and disputes*, FR-AD-017), which is what this file links to below.
 
 ---
 
@@ -20,6 +20,7 @@
 | PATCH | /admin/disputes/:complaintId | Admin | UC-87 (resolution may invoke UC-83 refund, UC-78 suspension) | FR-AD-017 |
 | GET | /support/contact | Public | UC-67, UC-69 | FR-SP-043, FR-TU-023, FR-PB-006 |
 | GET | /admin/reports/platform-health | Admin | UC-90, UC-91 | FR-AD-020, FR-AD-021, FR-AD-022 |
+| GET | /admin/reports/tutor-performance | Admin | UC-91 | FR-AD-022 |
 
 ---
 
@@ -230,7 +231,9 @@ An empty queue returns `complaints: []` with `200` (see 0.3) — this is the nor
 
 #### PATCH /admin/disputes/:complaintId
 
-**Purpose:** Resolve or dismiss a complaint (UC-87 Step 2, FR-AD-017). Doc 03 names the two possible downstream actions explicitly: "Admin resolves it — which may include a refund (UC-83), suspension (UC-78), or re-matching action." This is the one endpoint in the feature that reaches into another feature's data as a side effect: setting `resolutionAction: REFUND_ISSUED` triggers a service-layer call into Payments & Earnings (`refund.service.ts`, corresponding to UC-83, no FK — see Doc 07 §1.1 soft-dependency note), and `TUTOR_SUSPENDED` triggers a service-layer call into Accounts & Guardianship (`tutorProfile.service.ts`, corresponding to UC-78) to set the tutor's account status. A re-matching action is not modeled as a `resolutionAction` value here — it would be initiated separately via Matching & Cohorts' own endpoints, with the complaint simply marked `RESOLVED` once that's done. Neither the refund nor suspension call is exposed as a separate client-facing endpoint here; both are internal to this action.
+**Purpose:** Resolve or dismiss a complaint (UC-87 Step 2, FR-AD-017). Doc 03 names the two possible downstream actions explicitly: "Admin resolves it — which may include a refund (UC-83), suspension (UC-78), or re-matching action." This is the one endpoint in the feature that reaches into another feature's data as a side effect: setting `resolutionAction: REFUND_ISSUED` triggers a service-layer call into Payments & Earnings (`refund.service.ts`, corresponding to UC-83, no FK — see Feature Decomposition §1.1 soft-dependency note), and `TUTOR_SUSPENDED` triggers a service-layer call into Accounts & Guardianship (`tutorProfile.service.ts`, corresponding to UC-78) to set the tutor's account status. A re-matching action is not modeled as a `resolutionAction` value here — it would be initiated separately via Matching & Cohorts' own endpoints, with the complaint simply marked `RESOLVED` once that's done. Neither the refund nor suspension call is exposed as a separate client-facing endpoint here; both are internal to this action.
+
+**H4 fix:** the refund side effect no longer accepts a free-form `refundAmount`. It computes `sessionsRemaining`/`totalSessionsBilled` server-side from the affected student's current billing cycle — the same non-nullable, fully-audited proration formula used everywhere else refunds are issued (Section 13; Doc 04 `Refund` notes) — tagged `reason: ADMIN_DISPUTE_RESOLUTION`. Admin's only input is *which* membership's cycle to prorate against, not the amount.
 
 **Auth:** Admin
 
@@ -242,7 +245,7 @@ An empty queue returns `complaints: []` with `200` (see 0.3) — this is the nor
   "status": "string, required — UNDER_REVIEW | RESOLVED | DISMISSED",
   "resolutionAction": "string, optional — NO_ACTION | WARNING_ISSUED | REFUND_ISSUED | TUTOR_SUSPENDED, required if status is RESOLVED",
   "resolutionNotes": "string, required, internal note explaining the decision",
-  "refundAmount": "string (Decimal), required if resolutionAction is REFUND_ISSUED"
+  "affectedCohortMembershipId": "string (UUID), required if resolutionAction is REFUND_ISSUED — identifies which student's CohortMembership/current billing cycle to prorate the refund against (the dispute-detail view, GET /admin/disputes/:complaintId, surfaces the candidate membership(s) linked to the complaint's aboutSessionId/aboutThreadId for Admin to pick from — most disputes resolve to exactly one, but a group-cohort complaint naming the whole class could in principle need one refund call per affected membership)"
 }
 ```
 
@@ -267,7 +270,8 @@ The reporter receives a `Notification` (`type: COMPLAINT_RESOLVED`) once `status
 | Status | Condition | Message |
 |---|---|---|
 | 400 | `status: RESOLVED` submitted without `resolutionAction` | "A resolution action is required to resolve a complaint" |
-| 400 | `resolutionAction: REFUND_ISSUED` submitted without `refundAmount` | "A refund amount is required for this resolution action" |
+| 400 | `resolutionAction: REFUND_ISSUED` submitted without `affectedCohortMembershipId` | "affectedCohortMembershipId is required for this resolution action" |
+| 400 | `affectedCohortMembershipId` has no active, paid billing cycle to prorate | "affectedCohortMembershipId does not have an active, paid billing cycle to prorate" |
 | 409 | Complaint already `RESOLVED` or `DISMISSED` | "This complaint has already been closed" |
 
 **Implemented in:** `src/controllers/adminDispute.controller.ts → resolveDispute` · `src/services/adminDispute.service.ts → resolveDispute` · `src/schemas/complaint.schema.ts → resolveDisputeSchema`
@@ -302,7 +306,7 @@ The reporter receives a `Notification` (`type: COMPLAINT_RESOLVED`) once `status
 
 #### GET /admin/reports/platform-health
 
-**Purpose:** Admin-facing operational dashboard summary, combining two related Doc 03 use cases: UC-90 (*Admin uses the stale-approval and support-management tools*, FR-AD-020 — the `overdueMatchApprovals` and `recordingComplianceEscalations` figures) and UC-91 (*Admin views platform statistics and reports*, FR-AD-021/FR-AD-022 — platform-wide activity stats and tutor performance/badge oversight). This endpoint reads across feature boundaries (soft dependency only — no FK), matching the note in Doc 07 §1.1 that `support-trust-admin` is "an integration surface, not a domain of its own data."
+**Purpose:** Admin-facing operational dashboard summary, combining two related Doc 03 use cases: UC-90 (*Admin uses the stale-approval and support-management tools*, FR-AD-020 — the `overdueMatchApprovals` and `recordingComplianceEscalations` figures) and UC-91 (*Admin views platform statistics and reports*, FR-AD-021/FR-AD-022 — platform-wide activity stats and tutor performance/badge oversight). This endpoint reads across feature boundaries (soft dependency only — no FK), matching the note in Feature Decomposition §1.1 that `support-trust-admin` is "an integration surface, not a domain of its own data."
 
 **Auth:** Admin
 
@@ -326,6 +330,53 @@ This is a read-only, computed-on-request summary — it is not a stored `Report`
 **Error responses:** none.
 
 **Implemented in:** `src/controllers/adminReporting.controller.ts → getPlatformHealth` · `src/services/adminReporting.service.ts → aggregatePlatformHealth`
+
+---
+
+#### GET /admin/reports/tutor-performance
+
+**H5 fix — new endpoint.** `TutorPerformanceTable.tsx` (Doc 05b's file inventory, Doc 07 §8.5) had no backing data source in earlier drafts; this closes that gap rather than leaving it flagged. Backs UC-91 (FR-AD-022 — tutor performance/badge oversight), reading across `accounts-guardianship`, `class-delivery-library`, `gamification-engagement`, and `support-trust-admin` (soft dependency only, same integration-surface pattern as `platform-health` above — no FK).
+
+**Auth:** Admin
+
+**Query params:**
+```
+?page=1&limit=20 (00-api-conventions §0.3 pagination pattern)
+?tutorId=uuid (optional — single-tutor lookup instead of the full paginated list)
+?sortBy=uniqueStudentsTaught|badgeCount|complaintCount (default uniqueStudentsTaught, descending)
+?verificationStatus=PENDING|VERIFIED|REJECTED (optional filter, default VERIFIED-only — a pending/rejected tutor has no meaningful performance history yet)
+```
+
+**Success response — 200:**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "OK",
+  "data": {
+    "tutors": [
+      {
+        "tutorId": "uuid",
+        "fullName": "string",
+        "verificationStatus": "VERIFIED",
+        "uniqueStudentsTaught": 14,
+        "activeCohortCount": 3,
+        "completedSessionCount": 210,
+        "tutorCausedMissCount": 2,
+        "badgeCount": 5,
+        "complaintCount": 1,
+        "createdAt": "2026-01-10T09:00:00Z"
+      }
+    ],
+    "pagination": { "page": 1, "limit": 20, "total": 47, "totalPages": 3 }
+  }
+}
+```
+Every figure is computed on request from existing owned/related data, not a new stored aggregate table: `uniqueStudentsTaught` from `TutorProfile` (M6 fix — the platform-wide canonical field name, see below), `completedSessionCount`/`tutorCausedMissCount` from `ScheduledSession`/`SessionMiss` (Class Delivery & Library), `badgeCount` from `TutorBadge` (Gamification & Engagement), `complaintCount` from `ComplaintReport.aboutUserId` (this feature's own data). This mirrors `platform-health`'s already-established pattern of a read-only, computed-on-request response with no corresponding `POST`.
+
+**Error responses:** none beyond common auth/validation.
+
+**Implemented in:** `src/controllers/adminReporting.controller.ts → getTutorPerformance` · `src/services/adminReporting.service.ts → getTutorPerformanceHistory`
 
 ---
 

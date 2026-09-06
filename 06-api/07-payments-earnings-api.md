@@ -2,7 +2,7 @@
 **Feature:** Payments & Earnings
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md`. See also 0.5 for the Chapa webhook auth exception, and 0.4 — the payment-pause session reschedule and the monthly payout batch are job/event-driven, exposed here only as read state.
 
-**Owns:** PricingConfig, Payment, PaymentPause, Refund, TutorEarning, Payout, PromotionCode. **Depends on:** Matching & Cohorts, Class Delivery & Library (hard, per Doc 07 §1.1 — `TutorEarning` → `ScheduledSession`).
+**Owns:** PricingConfig, Payment, PaymentPause, Refund, TutorEarning, Payout, PromotionCode. **Depends on:** Matching & Cohorts, Class Delivery & Library (hard, per Feature Decomposition §1.1 — `TutorEarning` → `ScheduledSession`).
 
 ---
 
@@ -254,6 +254,8 @@ A partially-formed 1-to-5 class that closes at 3 students (Section 7 Partial Gro
 ```
 
 **Success response — 201:**
+
+**L1 fix — intentional, not an inconsistency:** every other update-style call in this file (e.g. `PATCH /admin/promotions/:id`) returns `200`, so a `PUT` returning `201` looks like a copy-paste slip at first glance. It isn't: per Doc 04's `PricingConfig` versioning note, this call never mutates a row in place — it always inserts a brand-new `PricingConfig` row and deactivates the previous one. `201 Created` is the accurate status for what actually happens server-side, even though the verb is `PUT`; a `PUT` implying idempotent in-place replacement would more conventionally pair with `200`, but "idempotent" doesn't apply here since two identical calls produce two different `PricingConfig` rows, not one converged state.
 ```json
 {
   "statusCode": 201,

@@ -12,7 +12,7 @@
 | Field | Detail |
 |---|---|
 | Signature | `awardXP(studentId: string, amount: number, reason: XPReason): Promise<XPLedgerEntryDTO>` |
-| Purpose | Event-based — called from other features (primarily `class-delivery-library`'s `session.service.ts → markCompleted`, and `weeklyAssessment.service.ts` completion, per the soft-dependency note in Doc 07 §1.1) rather than exposed as its own client-facing endpoint. |
+| Purpose | Event-based — called from other features (primarily `class-delivery-library`'s `session.service.ts → markCompleted`, and `weeklyAssessment.service.ts` completion, per the soft-dependency note in Feature Decomposition §1.1) rather than exposed as its own client-facing endpoint. |
 | Side effects | Inserts an append-only `XPLedgerEntry` row; never mutates a running total column — `totalXP` is always a live sum over the ledger (Doc 04 §4.0 design decision, matching the leaderboard's own "never a stored/denormalized table" rule below). Also calls `streak.service.ts → updateStreakOnActivity` for the same event. |
 | Edge cases | This function has no failure mode that should roll back the triggering action — an XP award failure must never prevent a class from being marked complete. Any error here should be caught and logged by the caller, not propagated as a blocking exception (same philosophy as `notification.service.ts → dispatchNotification`). |
 
@@ -33,21 +33,22 @@ Test file: `tests/services/xp.service.test.ts` — includes the per-grade-scopin
 
 | Handler | Calls | Response |
 |---|---|---|
-| getMyProgress | `xp.service` read: sum of `XPLedgerEntry` for caller + `Streak` row + recent entries | 200 |
+| getMyProgress | `xp.service` read: sum of `XPLedgerEntry` for caller-resolved `studentId` (see edge case) + `Streak` row + recent entries | 200 |
 | getLeaderboard | `xpService.getLeaderboard(req.user.id, req.user.role, req.query.studentId, req.query.period)` | 200 |
 
 | Field | Detail |
 |---|---|
 | getMyProgress edge case | A streak broken by an inactive period resets `currentStreakDays` without deleting previously earned badges/XP — `totalXP` is never reduced by a streak reset (UC-63 alternate flow). |
+| getMyProgress auth | **H3 fix:** now `Student\|Parent`, matching the API spec and `getLeaderboard`'s existing pattern below — for `PARENT`, resolves `req.query.studentId` through an `ACTIVE` `ParentStudentRelationship` (same check named in `00-api-conventions.md` §0.2 and used by `profile.service.ts → getProfile`) before reading that student's ledger/streak; for `STUDENT`, `studentId` is always the caller's own, `req.query.studentId` is ignored if present. |
 
 ### src/routes/xp.routes.ts (new)
 
 | Method | Path | Middleware chain | Handler |
 |---|---|---|---|
-| GET | /gamification/xp/me | `authMiddleware, requireRole('STUDENT')` | getMyProgress |
+| GET | /gamification/xp/me | `authMiddleware` | getMyProgress |
 | GET | /gamification/leaderboard | `authMiddleware` | getLeaderboard |
 
-Mounted per the two paths shown (leaderboard is Student\|Parent per the API spec, progress is Student-only).
+Neither route restricts by `requireRole` at the middleware layer — both are `Student\|Parent`, with the caller-vs-target-student resolution (and the `ACTIVE ParentStudentRelationship` check for a Parent caller) done inside the service function, identical in shape to `getLeaderboard`'s existing pattern.
 
 ---
 
@@ -76,15 +77,19 @@ Test file: `tests/services/badge.service.test.ts`
 
 | Handler | Calls | Response |
 |---|---|---|
-| listMyBadges | direct read of `StudentBadge` joined to `Badge`, scoped to caller | 200 |
+| listMyBadges | direct read of `StudentBadge` joined to `Badge`, scoped to the caller-resolved `studentId` (H3 fix — see below) | 200 |
 | adminListAll | `badgeService.adminManageBadges(req.query.category, req.query.page, req.query.limit)` | 200 |
 | adminAdjust | `badgeService.adminManageBadges(req.params.badgeId, req.body)` | 200 |
+
+| Field | Detail |
+|---|---|
+| listMyBadges auth | **H3 fix:** now `Student\|Parent`. For `PARENT`, resolves `req.query.studentId` through an `ACTIVE` `ParentStudentRelationship` before scoping the `StudentBadge` read; for `STUDENT`, always the caller's own. Same resolution pattern as `xp.controller.ts → getMyProgress` and `getLeaderboard`. |
 
 ### src/routes/badge.routes.ts (new)
 
 | Method | Path | Middleware chain | Handler |
 |---|---|---|---|
-| GET | /gamification/badges/me | `authMiddleware, requireRole('STUDENT')` | listMyBadges |
+| GET | /gamification/badges/me | `authMiddleware` | listMyBadges |
 | GET | /admin/badges | `authMiddleware, requireRole('ADMIN')` | adminListAll |
 | PATCH | /admin/badges/:badgeId | `authMiddleware, requireRole('ADMIN')` | adminAdjust |
 
@@ -128,14 +133,18 @@ Test file: `tests/services/challenge.service.test.ts`
 |---|---|---|
 | listActive | `challengeService.listActiveChallenges()` | 200 |
 | adminCreate | `challengeService.createChallenge(req.body, req.user.id)` | 201 |
-| getMyProgress | direct read of `ChallengeProgress` for caller across active challenges | 200 |
+| getMyProgress | direct read of `ChallengeProgress` for the caller-resolved `studentId` across active challenges (H3 fix — see below) | 200 |
+
+| Field | Detail |
+|---|---|
+| getMyProgress auth | **H3 fix:** now `Student\|Parent`. Same `ACTIVE ParentStudentRelationship` resolution pattern as `xp.controller.ts → getMyProgress`. |
 
 ### src/routes/challenge.routes.ts (new)
 
 | Method | Path | Middleware chain | Handler |
 |---|---|---|---|
-| GET | /gamification/challenges | `authMiddleware, requireRole('STUDENT')` | listActive |
-| GET | /gamification/challenges/me | `authMiddleware, requireRole('STUDENT')` | getMyProgress |
+| GET | /gamification/challenges | `authMiddleware` | listActive |
+| GET | /gamification/challenges/me | `authMiddleware` | getMyProgress |
 | POST | /admin/challenges | `authMiddleware, requireRole('ADMIN'), validate(createChallengeSchema)` | adminCreate |
 
 ---

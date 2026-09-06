@@ -168,7 +168,7 @@ Same one-router-two-mount-points pattern as `policy.routes.ts`.
 | Field | Detail |
 |---|---|
 | Signature | `calculateProration(paymentId: string, reason: RefundReason): Promise<RefundCalculationDTO>` |
-| Purpose | Always by sessions delivered, never calendar days (Section 13). `amount = (sessionsRemaining / totalSessionsBilled) × payment.amount`. |
+| Purpose | Always by sessions delivered, never calendar days (Section 13). `amount = round((sessionsRemaining / totalSessionsBilled) × payment.amount, 2)`, where `totalSessionsBilled = payment.cohortMembership.cohort.sessionsPerWeek × 4` (Doc 02 §7 v3.2 callout, Doc 04 `Cohort.sessionsPerWeek`) — the current 28-day cycle's billed count, not a running lifetime total. Rounded to 2 decimal places per Section 13's v3.2 monetary-rounding rule (M7 fix) — never stored as an unrounded `Decimal`. |
 | Edge cases | A free make-up session under FR-MK-001 is never counted as undelivered toward `sessionsRemaining` — it's a same-cost substitute for a session already billed, not an additional undelivered session (Section 13 Definition of Done #3). This is enforced by counting *distinct billed sessions*, not raw `ScheduledSession` rows, when computing `sessionsRemaining`. |
 
 Test file: `tests/services/refund.service.test.ts` — includes the sessions-delivered proration formula case explicitly, and the make-up-session-not-double-counted case.
@@ -209,7 +209,7 @@ Mounted at `/admin/refunds`.
 |---|---|
 | Signature | `creditEarning(sessionId: string, tutorId: string, rateType: 'FULL' \| 'REDUCED_MAKEUP'): Promise<TutorEarningDTO>` |
 | Purpose | Event-triggered on session completion (`FULL`) or make-up-session completion (`REDUCED_MAKEUP`, flagged by `sessionMiss.service.ts → recordTutorCausedMiss`) — not directly client-facing. |
-| Side effects | Inserts a `TutorEarning` row referencing the `ScheduledSession` (the hard FK named in this feature's dependency on `class-delivery-library`, per Doc 07 §1.1). |
+| Side effects | Inserts a `TutorEarning` row referencing the `ScheduledSession` (the hard FK named in this feature's dependency on `class-delivery-library`, per Feature Decomposition §1.1). `amount = tutorSharePerHour` for `rateType: FULL`; `amount = round(tutorSharePerHour × 0.5, 2)` for `rateType: REDUCED_MAKEUP` (FR-MK-009) — rounded to 2 decimal places per Section 13's v3.2 monetary-rounding rule (M7 fix) if the 50% split lands on a fractional subunit. |
 
 #### getEarningsForTutor
 

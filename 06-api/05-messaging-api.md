@@ -2,7 +2,7 @@
 **Feature:** In-Platform Messaging
 **Conventions:** see 0.1–0.7 in `00-api-conventions.md`. See also 0.4 — thread archiving (90 days post-assignment) is job-driven, exposed here only as `status: "ARCHIVED"`.
 
-**Owns:** MessageThread, Message. **Depends on:** Matching & Cohorts (hard, per Doc 07 §1.1) — a `MessageThread` is 1:1 with a `Cohort`.
+**Owns:** MessageThread, Message. **Depends on:** Matching & Cohorts (hard, per Feature Decomposition §1.1) — a `MessageThread` is 1:1 with a `Cohort`.
 
 ---
 

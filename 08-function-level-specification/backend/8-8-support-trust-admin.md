@@ -1,7 +1,7 @@
 ## Project: AKEWTutor — Backend Function-Level Spec: Support, Trust & Admin Reporting
 **Conventions:** see `00-api-conventions.md` §0.1–0.7. **API reference:** `08-support-trust-admin-api.md`. **Folder/file reference:** `05a-backend-structure.md` §8.
 
-**Owns:** ComplaintReport. **Depends on:** `shared-config`, `messaging`, `class-delivery-library` (hard, via `relatedThreadId`/`relatedSessionId`). **Soft-integrates with:** `payments-earnings` (a refund can be issued as a resolution action, no FK), `accounts-guardianship` (a tutor suspension can be issued as a resolution action, no FK). This is the one feature that is soft-coupled to almost everything by design — an integration surface, not a domain of its own data (Doc 07 §1.1).
+**Owns:** ComplaintReport. **Depends on:** `shared-config`, `messaging`, `class-delivery-library` (hard, via `relatedThreadId`/`relatedSessionId`). **Soft-integrates with:** `payments-earnings` (a refund can be issued as a resolution action, no FK), `accounts-guardianship` (a tutor suspension can be issued as a resolution action, no FK). This is the one feature that is soft-coupled to almost everything by design — an integration surface, not a domain of its own data (Feature Decomposition §1.1).
 
 ---
 
@@ -10,7 +10,7 @@
 | Schema | Shape |
 |---|---|
 | createComplaintSchema | `z.object({ body: z.object({ category: z.enum(['SESSION_ISSUE','TUTOR_CONDUCT','PAYMENT_ISSUE','MESSAGE_ISSUE','OTHER']), description: z.string().min(10).max(2000), relatedCohortId: z.string().uuid().optional(), relatedSessionId: z.string().uuid().optional(), relatedPaymentId: z.string().uuid().optional() }).refine(b => b.category === 'OTHER' \|\| b.relatedCohortId \|\| b.relatedSessionId \|\| b.relatedPaymentId, "A complaint must reference a session, payment, or cohort unless filed as a general (OTHER) report") })` |
-| resolveDisputeSchema | `z.object({ body: z.object({ status: z.enum(['UNDER_REVIEW','RESOLVED','DISMISSED']), resolutionAction: z.enum(['NO_ACTION','WARNING_ISSUED','REFUND_ISSUED','TUTOR_SUSPENDED']).optional(), resolutionNotes: z.string().min(1), refundAmount: z.string().optional() }).refine(b => b.status !== 'RESOLVED' || !!b.resolutionAction, "A resolution action is required to resolve a complaint").refine(b => b.resolutionAction !== 'REFUND_ISSUED' || !!b.refundAmount, "A refund amount is required for this resolution action") })` |
+| resolveDisputeSchema | `z.object({ body: z.object({ status: z.enum(['UNDER_REVIEW','RESOLVED','DISMISSED']), resolutionAction: z.enum(['NO_ACTION','WARNING_ISSUED','REFUND_ISSUED','TUTOR_SUSPENDED']).optional(), resolutionNotes: z.string().min(1), affectedCohortMembershipId: z.string().uuid().optional() }).refine(b => b.status !== 'RESOLVED' || !!b.resolutionAction, "A resolution action is required to resolve a complaint").refine(b => b.resolutionAction !== 'REFUND_ISSUED' || !!b.affectedCohortMembershipId, "affectedCohortMembershipId is required for this resolution action") })` — **H4 fix:** `refundAmount` removed; replaced with `affectedCohortMembershipId` so the amount is always server-computed, never client-supplied. |
 
 ### src/services/complaint.service.ts (new)
 
@@ -81,8 +81,9 @@ Test file: `tests/services/adminDispute.service.test.ts`
 
 | Field | Detail |
 |---|---|
-| Signature | `resolveDispute(complaintId: string, adminId: string, input: { status, resolutionAction?, resolutionNotes, refundAmount? }): Promise<DisputeResolutionResultDTO>` |
-| Purpose | Resolve or dismiss a complaint. The one function in this feature that reaches into another feature's data as a side effect: `resolutionAction: REFUND_ISSUED` calls `payments-earnings`' `refund.service.ts → approveRefund`-equivalent path with `refundAmount`; `resolutionAction: TUTOR_SUSPENDED` calls `accounts-guardianship`'s `adminPeople.service.ts → suspendAccount`. A re-matching resolution is **not** modeled as a `resolutionAction` value — it is initiated separately via `matching-cohorts`' own endpoints, with the complaint simply marked `RESOLVED` once that's done externally; this function never contains re-matching logic itself. |
+| Signature | `resolveDispute(complaintId: string, adminId: string, input: { status, resolutionAction?, resolutionNotes, affectedCohortMembershipId? }): Promise<DisputeResolutionResultDTO>` |
+| Purpose | Resolve or dismiss a complaint. The one function in this feature that reaches into another feature's data as a side effect: `resolutionAction: REFUND_ISSUED` calls `payments-earnings`' `refund.service.ts → calculateProration(payment.id, 'ADMIN_DISPUTE_RESOLUTION')` for the `Payment` tied to `affectedCohortMembershipId`'s current billing cycle, then `approveRefund` — **H4 fix:** this is the exact same sessions-delivered proration path every other refund reason uses (Section 13), never a bare client-supplied amount; `resolutionAction: TUTOR_SUSPENDED` calls `accounts-guardianship`'s `adminPeople.service.ts → suspendAccount`. A re-matching resolution is **not** modeled as a `resolutionAction` value — it is initiated separately via `matching-cohorts`' own endpoints, with the complaint simply marked `RESOLVED` once that's done externally; this function never contains re-matching logic itself. |
+| Throws | `ApiError(400, "affectedCohortMembershipId does not have an active, paid billing cycle to prorate")` — e.g. the membership has no `SUCCESS` `Payment` in its current cycle, so there is nothing to refund against. |
 | Throws | `ApiError(400, "A resolution action is required to resolve a complaint")` — redundant with the schema refine, retained as the authoritative rule. `ApiError(400, "A refund amount is required for this resolution action")` — same. `ApiError(409, "This complaint has already been closed")` — already `RESOLVED`/`DISMISSED`. |
 | Side effects | Sets `status`, `resolutionAction`, `resolutionNotes` (internal only — never disclosed to the reporter verbatim), `resolvedById`, `resolvedAt`. Sends a `Notification(type: COMPLAINT_RESOLVED)` to the reporter once `status` moves to `RESOLVED` or `DISMISSED`, through the standard pipeline. |
 
@@ -124,8 +125,8 @@ Test file: `tests/services/adminReporting.service.test.ts`
 
 | Field | Detail |
 |---|---|
-| Signature | `getActivityHistory(page?, limit?, dateRange?): Promise<PaginatedActivityDTO>` · `getTutorPerformanceHistory(tutorId?: string, page?, limit?): Promise<PaginatedTutorPerformanceDTO>` |
-| Purpose | Backing UC-91's platform-wide activity stats and tutor performance/badge oversight — these read across `class-delivery-library` (sessions delivered, misses), `gamification-engagement` (badges awarded), and `accounts-guardianship` (verification/suspension history) without owning any of that data directly, consistent with this feature being "an integration surface, not a domain of its own data." |
+| Signature | `getActivityHistory(page?, limit?, dateRange?): Promise<PaginatedActivityDTO>` · `getTutorPerformanceHistory(tutorId?: string, page?, limit?, sortBy?, verificationStatus?): Promise<PaginatedTutorPerformanceDTO>` |
+| Purpose | Backing UC-91's platform-wide activity stats and tutor performance/badge oversight — these read across `class-delivery-library` (sessions delivered, misses), `gamification-engagement` (badges awarded), and `accounts-guardianship` (verification/suspension history, `uniqueStudentsTaught` per M6's canonical field name) without owning any of that data directly, consistent with this feature being "an integration surface, not a domain of its own data." **H5 fix:** `getTutorPerformanceHistory` now backs a documented endpoint (`GET /admin/reports/tutor-performance`, `08-support-trust-admin-api.md`) rather than an implied-but-undocumented route. |
 
 Test file: `tests/services/adminReporting.service.test.ts`
 
@@ -145,7 +146,7 @@ Test file: `tests/services/adminReporting.service.test.ts`
 | GET | /activity | `authMiddleware, requireRole('ADMIN')` | getActivity |
 | GET | /tutor-performance | `authMiddleware, requireRole('ADMIN')` | getTutorPerformance |
 
-Mounted at `/admin/reports`. Note: only `GET /admin/reports/platform-health` is named in `08-support-trust-admin-api.md` §8.1 — `/activity` and `/tutor-performance` are implied by Doc 05a's service function list (`getActivityHistory`, `getTutorPerformanceHistory`) and UC-91's stated scope, but aren't independently documented as separate endpoints in the current API spec. Worth confirming with whoever owns Doc 06 whether these should be split into their own documented routes or folded into `platform-health`'s response before implementation — flagged here rather than silently assumed either way.
+Mounted at `/admin/reports`. **H5 fix:** `GET /admin/reports/tutor-performance` is now independently documented in `08-support-trust-admin-api.md` §8.1 (was previously implied-only, flagged as a gap). `GET /admin/reports/activity` remains implied by Doc 05a's `getActivityHistory` service function and UC-91's stated scope but is **still not independently documented** as its own endpoint in the API spec — this narrower gap is left flagged rather than silently resolved, since it wasn't part of this review round's H5 finding and folding it in without confirming its response shape risks guessing wrong. Worth a follow-up pass with whoever owns Doc 06 before `/activity` is built against.
 
 ---
 

@@ -10,14 +10,14 @@
 ### 6.1 Routes
 
 ```
-/student/achievements  → ProtectedRoute(['STUDENT']) → DashboardLayout(StudentSidebar) → AchievementsPage
+/student/achievements  → ProtectedRoute('any') → DashboardLayout → AchievementsPage
 /student/leaderboard    → ProtectedRoute(['STUDENT','PARENT']) → DashboardLayout → LeaderboardPage
-/student/challenges      → ProtectedRoute(['STUDENT']) → DashboardLayout(StudentSidebar) → ChallengesPage
+/student/challenges      → ProtectedRoute('any') → DashboardLayout → ChallengesPage
 /admin/badges             → ProtectedRoute(['ADMIN']) → DashboardLayout(AdminSidebar) → BadgeManagementPage
 /admin/challenges          → ProtectedRoute(['ADMIN']) → DashboardLayout(AdminSidebar) → ChallengeManagementPage
 ```
 
-`LeaderboardPage` is the one page in this feature reachable by Parent as well as Student, matching the API's `Student|Parent` auth label on `GET /gamification/leaderboard` (a Parent viewing their child's grade ranking) — every other route here is Student-only, since XP/badges/challenges belong to the student's own account, not something a Parent separately drives.
+**H3 fix:** `AchievementsPage` and `ChallengesPage` are now reachable by Parent as well as Student (previously Student-only, which left FR-SP-014/UC-14's "Parent can view the student dashboard's XP/streaks/achievements" requirement with no actual page or endpoint to reach). Both pages resolve which student's data to show the same way: `STUDENT` gets their own with no param; `PARENT` resolves an active child via a `studentId` selector (single linked child auto-selected, multiple children get a dropdown — same one-per-child selector pattern used for payments, Doc 07 §7.6) and passes `studentId` through to every hook in this feature. `LeaderboardPage` was already Parent-reachable before this fix and needed no change.
 
 ### 6.2 Types (added to src/types/index.ts)
 
@@ -67,10 +67,12 @@ export interface ChallengeProgress { challengeId: string; progressValue: number;
 ### 6.3 Hooks (src/hooks/useGamification.ts)
 
 ```typescript
-export function useMyProgress() {
+export function useMyProgress(studentId?: string) {
+  // H3 fix: studentId is required when called from a Parent-viewed dashboard (FR-SP-014),
+  // omitted/ignored server-side for a Student caller — same optional-param shape as useLeaderboard.
   return useQuery({
-    queryKey: [QUERY_KEYS.XP_PROGRESS],
-    queryFn: () => api.get<XPProgress>('/gamification/xp/me').then((r) => r.data),
+    queryKey: [QUERY_KEYS.XP_PROGRESS, studentId],
+    queryFn: () => api.get<XPProgress>('/gamification/xp/me', { params: { studentId } }).then((r) => r.data),
   });
 }
 
@@ -85,10 +87,11 @@ export function useLeaderboard(period: 'WEEKLY' | 'MONTHLY', studentId?: string)
 ### 6.4 Hooks (src/hooks/useBadges.ts)
 
 ```typescript
-export function useMyBadges() {
+export function useMyBadges(studentId?: string) {
+  // H3 fix: same Parent/studentId shape as useMyProgress.
   return useQuery({
-    queryKey: [QUERY_KEYS.MY_BADGES],
-    queryFn: () => api.get<{ badges: Badge[] }>('/gamification/badges/me').then((r) => r.data),
+    queryKey: [QUERY_KEYS.MY_BADGES, studentId],
+    queryFn: () => api.get<{ badges: Badge[] }>('/gamification/badges/me', { params: { studentId } }).then((r) => r.data),
   });
 }
 ```
@@ -123,10 +126,11 @@ export function useActiveChallenges() {
   });
 }
 
-export function useMyChallengeProgress() {
+export function useMyChallengeProgress(studentId?: string) {
+  // H3 fix: same Parent/studentId shape as useMyProgress/useMyBadges.
   return useQuery({
-    queryKey: [QUERY_KEYS.CHALLENGE_PROGRESS],
-    queryFn: () => api.get<{ progress: ChallengeProgress[] }>('/gamification/challenges/me').then((r) => r.data),
+    queryKey: [QUERY_KEYS.CHALLENGE_PROGRESS, studentId],
+    queryFn: () => api.get<{ progress: ChallengeProgress[] }>('/gamification/challenges/me', { params: { studentId } }).then((r) => r.data),
   });
 }
 

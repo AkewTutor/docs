@@ -23,7 +23,7 @@
 /admin/subjects                   → ProtectedRoute(['ADMIN'])   → DashboardLayout(AdminSidebar)   → SubjectManagementPage
 ```
 
-> As flagged in `0-frontend-conventions.md` §0.2: `ParentSidebar.tsx` is specified here (not in Doc 05b's original inventory) because Parent's page set — guardianship management, a scoped view of their child's profile/payments — is materially distinct from Student's. It composes the same `DashboardLayout` shell as `StudentSidebar`/`TutorSidebar`/`AdminSidebar`, differing only in nav items: Add Student, Guardian Settings, (child's) Upcoming Classes, (child's) Payments, Notifications.
+> **M2 fix — resolved:** `ParentSidebar.tsx` is specified here (added to Doc 05b's file inventory) because Parent's page set — guardianship management, a scoped view of their child's profile/payments/achievements — is materially distinct from Student's. It composes the same `DashboardLayout` shell as `StudentSidebar`/`TutorSidebar`/`AdminSidebar`, differing only in nav items: Add Student, Guardian Settings, (child's) Upcoming Classes, (child's) Payments, (child's) Achievements, Notifications.
 
 ### 2.2 Types (added to src/types/index.ts)
 

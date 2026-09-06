@@ -102,7 +102,7 @@
 | `src/components/accounts/SubjectRankingForm.tsx` | Component | drag-to-rank UI, hard-blocks a 3rd subject |
 | `src/components/accounts/AvailabilityCalendar.tsx` | Component | slot add/remove grid |
 | `src/components/accounts/TutorVerificationCard.tsx` | Component | one pending tutor's review card |
-| `src/components/common/StudentSidebar.tsx`, `TutorSidebar.tsx` | Component | role-specific dashboard nav (used by `DashboardLayout`) |
+| `src/components/common/StudentSidebar.tsx`, `TutorSidebar.tsx`, `ParentSidebar.tsx` | Component | role-specific dashboard nav (used by `DashboardLayout`). **M2 fix:** `ParentSidebar.tsx` added to this inventory — Parent is a fourth distinct role with materially different pages (guardianship management, a scoped view of a child's profile/payments/achievements, no subject-ranking or availability screens), so it gets its own sidebar rather than routing Parent through `StudentSidebar` with conditional items. Specified in `02-accounts-guardianship-frontend.md` where the Parent-exclusive pages live. |
 
 ### Store, Hooks
 
@@ -358,7 +358,7 @@
 |---|---|
 | `src/types/index.ts` | Add all types across the 8 features (StudentProfile, TutorProfile, Cohort, ScheduledSession, MessageThread, XPLedgerEntry, Payment, ComplaintReport, etc.) |
 | `src/constants/index.ts` | Add `QUERY_KEYS` for every hook above; add `ROUTES` for every page above, grouped by feature comment blocks |
-| `src/lib/axios.ts` | 401 interceptor redirects to the correct login route based on the failing request's role prefix (`/students/`, `/tutors/`, `/admin/`) rather than a single hardcoded admin redirect, since AKEWTutor has three authenticated roles, not one |
+| `src/lib/axios.ts` | 401 interceptor clears `auth.store.ts` and redirects to `/login?returnTo=<currentPath>` (M8 fix — a single shared login route with a `returnTo` param, not a per-role login route keyed off the failing request's path prefix; also corrected the four-role count below, was previously written as three) — AKEWTutor has one shared `LoginPage.tsx` backing all four roles (Student, Parent, Tutor, Admin), so there is no "correct login route" to branch to, only the one route plus where to send the person back afterward. |
 | `.env.example` | Confirm `VITE_API_URL` includes `/api/v1` |
 
 ---
@@ -385,7 +385,7 @@ Routing/state must exist before any nav/sidebar can build ROUTES-aware active-li
 
 **Phase 2 — `accounts-guardianship`**
 13. `useStudentProfile.ts`, `useTutorProfile.ts`, `useAvailability.ts`, `useSubjects.ts`
-14. `StudentSidebar.tsx`, `TutorSidebar.tsx` → `DashboardLayout.tsx` (modify) → `src/routes/index.tsx` (first pass)
+14. `StudentSidebar.tsx`, `TutorSidebar.tsx`, `ParentSidebar.tsx` → `DashboardLayout.tsx` (modify) → `src/routes/index.tsx` (first pass)
 15. `AcademicProfilePage.tsx`, `TutorProfilePage.tsx`, `SubjectRankingPage.tsx`, `AvailabilityPage.tsx`
 16. `useGuardianship.ts` → `AddStudentPage.tsx`, `InviteActivationPage.tsx`, `GuardianSettingsPage.tsx`
 17. `useAdminTutorVerification.ts`, `useAdminPeople.ts` → `TutorVerificationPage.tsx`, `PeopleManagementPage.tsx`, `SubjectManagementPage.tsx`

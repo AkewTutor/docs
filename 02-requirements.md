@@ -364,16 +364,36 @@ AKEWTutor supports three tutoring group formats at launch, confirmed as final. N
 > ✨ **NEW IN v3.0 — Partial Group Formation (Gap 1)**
 > For 1-to-3/1-to-5 formats, the system does not wait indefinitely for a full group. A group-formation window opens once the first student is auto-matched to a candidate class; the window length defaults to **48 hours** and is Admin-configurable. If the window closes with fewer than the target group size but at least one student matched, the class proceeds at whatever size was reached (floor of one student). **Per-student pricing is fixed at the FR-PR-002/003 rate regardless of final group size** — a 1-to-3 class that starts with two students still charges each student 150 ETB/hr; the platform and tutor absorb the shortfall against the Total/Hr and shares shown above rather than passing it to students. See Section 8, Path C for the matching mechanics.
 
+> ✨ **NEW IN v3.2 — Session Cadence, Defined (resolves open gap)**
+> Every price above is per **student, per hour, per session** — but nothing prior to v3.2 stated how many sessions make up the billing month those hourly rates roll up into. This is now fixed explicitly:
+> - **Session length is a fixed 60 minutes** for every format (matching the "Price/Student/Hr" basis above 1:1 — no fractional-hour sessions in V1).
+> - **Sessions-per-week (the "cadence") is derived from the tutor's matched recurring `AvailabilitySlot` rows**, not separately negotiated: when a `Cohort`'s schedule is confirmed (moving to `PENDING_PAYMENT`), the number of distinct recurring weekly slots matched into that schedule becomes the Cohort's `sessionsPerWeek` value (see Doc 04 `Cohort.sessionsPerWeek`). Typical values are 1–3 sessions/week; there is no hard cap in the schema, but matching logic should not offer more slots than the student's `learningSchedulePreference.days` indicates availability for.
+> - **Cadence is frozen at confirmation.** A tutor editing their `AvailabilitySlot` rows later does not retroactively change `sessionsPerWeek` on an already-`ACTIVE` Cohort — only a fresh match (new Cohort) picks up a new cadence.
+> - **The billing cycle is a fixed 4-week (28-day) window**, not a true calendar month, specifically so the sessions-billed count is deterministic: **`totalSessionsBilled = Cohort.sessionsPerWeek × 4`** for every billing cycle. This is what Section 13's "8 billed sessions" worked example assumes (2 sessions/week × 4 weeks = 8) and is the authoritative source for `Refund.totalSessionsBilled` (Section 13, Doc 04 §4.2.7). User-facing copy may still say "monthly payment" for familiarity, but the mechanical cycle length is always 28 days from `CohortMembership.billingCycleAnchorDate`.
+> - **`Payment.amount` per cycle** = `sessionsPerWeek × 4 × PricingConfig.pricePerStudentPerHour` (for that student's format, at the rate active when the cycle's first session was billed).
+
 **Definition of Done — Section 07 — Formats & Pricing**
 1. Admin can change the 1-to-1 price and revenue split from the console and see it reflected on the next new booking with no deployment.
 2. A 1-to-5 class that forms with only 3 students after the 48-hour window still bills each of those 3 students at 100 ETB/hr, not a recalculated rate.
 3. No format other than 1-to-1 / 1-to-3 / 1-to-5 can be selected anywhere in the student-facing UI.
+4. A Cohort confirmed with 2 matched weekly recurring slots has `sessionsPerWeek = 2` and bills exactly 8 sessions per 28-day cycle; a tutor's later availability edits do not change that number for the same Cohort.
 
 ---
 
 ## 08 Tutor–Student Matching Workflow
 
 Matching considers the student's subject, grade (always a hard match), academic level, preferences (Section 5.2, applied per the rules in 5.2's callout), schedule, and tutor availability. The workflow branches by tutoring format.
+
+> ✨ **NEW IN v3.2 — Match Percentage Formula, Defined (resolves M7)**
+> `FR-MA-001`'s "calculated match percentage" previously had no defined formula — `matchPercentage` existed in every 1-to-1 API/DTO example as a bare number with no way to reproduce it. Fixed as a weighted sum of three scored factors, computed only after all hard filters (subject ranked by the tutor, language, budget, ≥1 overlapping `AvailabilitySlot`) already pass — a tutor who fails any hard filter never enters scoring at all, never scores 0%:
+>
+> | Factor | Weight | Score (0–100) |
+> |---|---|---|
+> | Subject rank | 40% | 100 if the student's subject is the tutor's `TutorSubjectRanking.rank = 1` (primary); 70 if `rank = 2` (secondary) |
+> | Teaching style match | 35% | 100 if the tutor's stated style matches the student's `teachingStylePreference`; 100 if the student expressed no preference (neutral — never penalized for not stating one); 40 on an actual mismatch |
+> | Schedule overlap | 25% | `(overlapping slot count / student's total preferred slot count) × 100`, capped at 100 |
+>
+> `matchPercentage = round(0.40 × subjectRankScore + 0.35 × teachingStyleScore + 0.25 × scheduleOverlapScore)`, rounded to the nearest whole percent (standard round-half-up — `94.5` → `95`), matching the whole-number display already used in every example (`95%`, `80%`) throughout Docs 02/03/06. These weights are named constants (`MATCH_WEIGHTS` in a shared constants file), not Admin-configurable in V1 — same non-configurable-constant pattern as the M4 XP values above.
 
 ### Path A — 1-to-1 (Student-Selected Match)
 
@@ -422,7 +442,13 @@ Matching considers the student's subject, grade (always a hard match), academic 
 > ✨ **NEW IN v3.0 — Group Continuity on Tutor Exit (Gap 6 / Round 4 Item 4)**
 > If a tutor is removed from an active 1-to-3/1-to-5 class — whether by voluntary drop-out or Admin suspension — the existing student group is kept together as a unit and re-matched to a new eligible tutor via Path C rather than being dissolved and re-queued individually. If no single tutor can take the full group, the group falls back to the same double-fail handling as FR-MA-017 (Admin manual assembly, splitting the group only if unavoidable). Affected students are notified and are entitled to the refund policy in Section 13 for any un-tutored paid days during the gap.
 
-> ✨ **NEW IN v3.1 — Format-Switch Cancellation (Hand-off Gap 6)**
+> ✨ **NEW IN v3.2 — Group-Splitting Mechanics, Worked Example (resolves M3)**
+> "Splitting the group only if unavoidable" (above) previously had no concrete mechanic. Here is exactly what happens: a 1-to-5 cohort's tutor exits with 5 students still active. `tutorExitContinuity` (Doc 08 `8-3-matching-cohorts.md`) first spawns one fresh `MatchRequest` per affected `CohortMembership` (5 new `MatchRequest` rows, `path: PATH_C`, `status: PENDING_ADMIN_ASSIGNMENT`) — this is always step one, group-of-5 or not. From there:
+> - **If a single eligible replacement tutor has open availability for all 5** (subject-ranked for this subject, no `TutorExclusion` against any of the 5, and enough matching `AvailabilitySlot` capacity for the group's existing `sessionsPerWeek` cadence — Section 7 v3.2 callout): Admin calls `manuallyAssignTutor` once with all 5 `MatchRequest` IDs, forming one new `Cohort` that inherits the same `sessionsPerWeek`. The group stays together — no split.
+> - **If no single tutor can take all 5** (the actual "unavoidable" case): Admin calls `manuallyAssembleGroup` **more than once** — e.g. once with 3 of the 5 `MatchRequest` IDs against Tutor X, and again with the remaining 2 against Tutor Y — producing **two new, independent `Cohort` rows** in place of the one that ended. Each new Cohort gets its own `sessionsPerWeek` (independently derived from its own tutor's matched `AvailabilitySlot`s — it is not required to match the original cohort's cadence), its own `MessageThread` (1:1 per Cohort), and its own billing cycle going forward. The 3-and-2 split shown here is illustrative, not a rule — Admin may split into any grouping the available replacement tutors' capacity allows, down to 5 separate 1-to-1 placements in the worst case.
+> - **Refunds for the gap between the old cohort ending and the new cohort(s) starting** follow the standard undelivered-session proration (Section 13) against each affected student's *old* cohort's `totalSessionsBilled` — the new cohort(s) start a fresh billing cycle and are not retroactively charged for the gap.
+
+
 > A student-initiated format switch (Section 5.12, FR-SP-045) cancels the current match immediately and routes the student into a fresh matching cycle under the new format via the applicable path above — Path A/B if switching to 1-to-1, Path C if switching to a group format. This is distinct from the tutor-exit continuity rule above: a format switch is student-initiated and does not entitle the outgoing tutor's other students (if group-format) to any special handling, since the rest of that cohort is unaffected.
 
 **Definition of Done — Section 08 — Matching Workflow**
@@ -505,10 +531,54 @@ Matching considers the student's subject, grade (always a hard match), academic 
 > ✨ **NEW IN v3.0 — Leaderboard Scope & Privacy (Round 4 Item 6)**
 > The original leaderboard requirement did not specify scope or student-identity handling. v3.0 confirms leaderboards are always **per-grade** (a Grade 4 student never appears against Grade 10 students) and display **first name + last initial only**, consistent with the minor-protection stance in Section 14.
 
-**Definition of Done — Section 10 — Gamification**
+> ✨ **NEW IN v3.2 — XP Point Values, Defined (resolves M4)**
+> No prior draft assigned concrete point values to any `XPReason` — `awardXP(studentId, amount, reason)` (Doc 08 `8-6-gamification-engagement.md`) existed with `amount` as a free parameter and no table of what to actually pass. Fixed as follows:
+>
+> | `XPReason` | XP awarded | Trigger |
+> |---|---|---|
+> | `CLASS_ATTENDED` | 20 | Once per `ScheduledSession` marked `COMPLETED` (not per scheduled session — a `MISSED`/cancelled session awards nothing) |
+> | `ASSESSMENT_COMPLETED` | 15 | Once per `WeeklyAssessment` the student submits |
+> | `STREAK_MILESTONE` | 50 | Once per milestone reached: `currentStreakDays` hits 7, 30, or 90 (see the new streak-milestone note below) — not awarded again for the same milestone within one streak |
+> | `CHALLENGE_COMPLETED` | 30 (weekly challenge) / 100 (monthly challenge) | Once per `ChallengeProgress.completedAt` being set — amount depends on `Challenge.period`, not a flat value |
+> | `BADGE_AWARDED` | 25 | Once per `StudentBadge` row created (a flat bonus on top of whatever XP already led to earning the badge) |
+> | `OTHER` | Admin-specified, no fixed value | Reserved for manual Admin XP adjustments (e.g. goodwill, correcting an error) — the only reason where `amount` is caller-supplied rather than a constant |
+>
+> These are ordinary constants (`XP_VALUES` in a shared constants file, not schema-level data) — Admin cannot reconfigure them from the console in V1; a future version could move them into an Admin-editable table if that becomes a need.
+
+> ✨ **NEW IN v3.2 — Streak Milestones, Defined (supports M4/M5)**
+> `Streak.currentStreakDays` (Doc 04) previously had no defined milestone thresholds. Fixed: milestones are **7, 30, and 90 consecutive active days** (an "active day" being any day with at least one `COMPLETED` `ScheduledSession`). Each milestone triggers exactly one `STREAK_MILESTONE` XP award (above) and is also the trigger condition for the three streak badges listed in the new badge table below (M5). A streak that breaks and restarts re-earns each milestone from zero — milestones are not cumulative lifetime counts, they reset with `currentStreakDays`.
+
+> ✨ **NEW IN v3.2 — V1 Badge List, Defined (resolves M5)**
+> `Badge.criteriaDescription` (Doc 04) is free-text by design (no rating system to derive structured criteria from, per FC-01), but no prior draft actually enumerated which badges exist. V1 ships with the following seed list — enough to make the gamification feature demonstrably functional at launch, not an exhaustive final catalog (Admin can add more later via `PATCH /admin/badges`, Doc 06 `06-gamification-engagement-api.md`):
+>
+> **Student badges (`category: STUDENT`):**
+> | Badge | Criteria |
+> |---|---|
+> | Week One Warrior | Reach a 7-day streak (`STREAK_MILESTONE` at 7 days) |
+> | Monthly Momentum | Reach a 30-day streak |
+> | Quarter Champion | Reach a 90-day streak |
+> | First Class | Complete your first `ScheduledSession` |
+> | Century Club | Complete 100 total `ScheduledSession`s (`CLASS_ATTENDED` count, lifetime) |
+> | Assessment Ace | Submit 10 `WeeklyAssessment`s |
+> | Challenge Conqueror | Complete 5 `Challenge`s (any period) |
+>
+> **Tutor badges (`category: TUTOR`):**
+> | Badge | Criteria |
+> |---|---|
+> | First Cohort | Complete the first `ScheduledSession` for any `Cohort` as the assigned tutor |
+> | Ten Taught | Reach `uniqueStudentsTaught` = 10 (M6's canonical field name) |
+> | Fifty Taught | Reach `uniqueStudentsTaught` = 50 |
+> | Reliable Educator | Zero tutor-caused `SessionMiss` rows across 90 consecutive days of active teaching |
+>
+> These are seeded via `Badge` rows at initial deploy (a seed script, not a migration-embedded fixture), each with `isActive: true` and the `criteriaDescription` text shown above — evaluation of *when* to award each one lives in application logic (the relevant job/service per trigger: session-completion, streak-milestone, and challenge-completion handlers), not in the `Badge` row itself, consistent with `criteriaDescription` being documentation rather than a machine-evaluated rule field.
+
+
 1. The leaderboard for a Grade 3 student contains only other Grade 3 students.
 2. No leaderboard entry anywhere in the product shows a student's full last name.
 3. Tutor badges are computed from experience/performance/achievement fields only — no rating field exists to award them from.
+4. Completing a session awards exactly 20 XP, never a value pulled from thin air, and a 7-day streak awards exactly one 50 XP `STREAK_MILESTONE` entry, not one per day within the streak.
+
+
 
 ---
 
@@ -620,11 +690,15 @@ Matching considers the student's subject, grade (always a hard match), academic 
 > Prorated refunds (Section 3, FR-AD-012, FR-PB-007) are calculated by **sessions actually delivered**, not calendar days: refund = (sessions remaining in the paid month ÷ total sessions billed for that month) × amount paid. A session already delivered — including a free make-up session under FR-MK-001, which does not itself consume an extra billed slot — is never counted as "undelivered" for refund purposes. This same formula applies to format-switch refunds (FR-SP-048).
 
 > ℹ️ **Billing Cycle**
-> Billing cycle confirmed as monthly: the hourly rates in Section 7 are used to calculate each student's monthly total, anchored to that student's individual billing start date per FR-PB-003.
+> Billing cycle is a fixed **4-week (28-day)** window (referred to as "monthly" in user-facing copy for familiarity), anchored to each student's individual billing start date per FR-PB-003. The hourly rates in Section 7 combine with the session cadence defined in that section's v3.2 callout to produce each student's per-cycle total: `sessionsPerWeek × 4 × pricePerStudentPerHour`. `totalSessionsBilled` for refund proration (below) is always `sessionsPerWeek × 4` for the Cohort in question — see Section 7.
+
+> ✨ **NEW IN v3.2 — Monetary Rounding Rule, Defined (resolves M7)**
+> `PricingConfig.pricePerStudentPerHour`/`platformSharePerHour`/`tutorSharePerHour` are Admin-set directly and need no rounding — they're exact by construction. But two calculated (not directly-set) amounts can land on a fractional ETB subunit and previously had no defined rounding behavior: the refund proration formula below (`(sessionsRemaining / totalSessionsBilled) × payment.amount`) and FR-MK-009's 50% reduced make-up rate. Both now round **to 2 decimal places (the nearest 0.01 ETB), standard round-half-up**, at the point the amount is calculated and persisted — never left as an unrounded `Decimal` and never re-rounded on read. This is the one rounding rule for every calculated (as opposed to Admin-set) monetary amount platform-wide; if a future calculated-amount field is added, it follows this same rule unless a doc explicitly says otherwise.
 
 **Definition of Done — Section 13 — Payment & Billing**
 1. Two students who joined on different calendar dates receive their payment reminders 3 days before their own respective due dates, not a shared platform date.
-2. A refund for 2 undelivered sessions out of 8 billed sessions returns exactly 2/8 of the amount paid, not a day-based fraction.
+2. A refund for 2 undelivered sessions out of 8 billed sessions (a 2-session/week Cohort's 28-day cycle) returns exactly 2/8 of the amount paid, not a day-based fraction.
+3. A refund whose exact proration would land on a fractional subunit (e.g. 3/8 of 1,650 ETB = 618.75) is stored and paid out as exactly 618.75 ETB — rounded to 2 decimal places, never truncated or rounded to a whole Birr.
 3. A free make-up session never appears as a separately billed or separately refundable line item.
 4. A Grade 10 student with no linked guardian can complete a payment end-to-end via Chapa.
 5. A session that falls during a payment pause is rescheduled with zero refund, zero make-up entry, and zero miss classification once payment resumes.
