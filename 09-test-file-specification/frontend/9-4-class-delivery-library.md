@@ -84,7 +84,7 @@ FRs: FR-MK-004, FR-MK-006–008. **OWASP: A08:2021 – Software and Data Integri
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| ≥12h before session → `'FREE'` | `hoursUntilSession = 12` exactly, and `13` | call `classifyReschedule(sessionScheduledStart, requestedAt)` | `'FREE'` in both — confirms the boundary is inclusive at exactly 12h |
+| ≥12h before session → `'FREE_RESCHEDULE'` | `hoursUntilSession = 12` exactly, and `13` | call `classifyReschedule(sessionScheduledStart, requestedAt)` | `'FREE_RESCHEDULE'` in both — confirms the boundary is inclusive at exactly 12h |
 | <12h before session → `'SAME_DAY_MISS'` | `hoursUntilSession = 11.999` | call | `'SAME_DAY_MISS'` |
 | Negative `hoursUntilSession` (session already started/past) still resolves to `'SAME_DAY_MISS'` | `requestedAt` after `sessionScheduledStart` | call | `'SAME_DAY_MISS'` — 8-4 explicitly notes this util does not separately guard against that case, relying on the form to prevent selecting a past/in-progress session as the target in the first place; this test documents that reliance rather than silently assuming it |
 
@@ -92,7 +92,7 @@ FRs: FR-MK-004, FR-MK-006–008. **OWASP: A08:2021 – Software and Data Integri
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| Success confirmation uses the **server's** `classification`, not the client preview | mock the mutation to resolve with `classification: 'SAME_DAY_MISS'` while the form's live preview (computed via `classifyReschedule`) showed `'FREE'` a moment before submit | `mutate(...)`, then render the confirmation | confirmation displays `'SAME_DAY_MISS'` — the server value wins outright, per 8-4's explicit clock-drift-disagreement note; this is the single most important integrity test in this feature, since silently trusting the client's own guess here would let a rescheduled session's fee/make-up eligibility display incorrectly to the person even though the backend's persisted value is different (OWASP A08:2021) |
+| Success confirmation uses the **server's** `classification`, not the client preview | mock the mutation to resolve with `classification: 'SAME_DAY_MISS'` while the form's live preview (computed via `classifyReschedule`) showed `'FREE_RESCHEDULE'` a moment before submit | `mutate(...)`, then render the confirmation | confirmation displays `'SAME_DAY_MISS'` — the server value wins outright, per 8-4's explicit clock-drift-disagreement note; this is the single most important integrity test in this feature, since silently trusting the client's own guess here would let a rescheduled session's fee/make-up eligibility display incorrectly to the person even though the backend's persisted value is different (OWASP A08:2021) |
 
 ---
 
@@ -142,7 +142,7 @@ FRs: FR-MK-004, FR-MK-006–008. **OWASP: A08:2021 – Software and Data Integri
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| Live badge updates as `requestedNewTime` changes | pick a time ≥12h out, then change to <12h out | — | badge flips from `FREE` to `SAME_DAY_MISS` live, computed via `classifyReschedule`, before any submit |
+| Live badge updates as `requestedNewTime` changes | pick a time ≥12h out, then change to <12h out | — | badge flips from `FREE_RESCHEDULE` to `SAME_DAY_MISS` live, computed via `classifyReschedule`, before any submit |
 | Confirmation reconciles to the server's `classification` even if it differs from the last-shown live badge | see §9.3's `useRequestReschedule` case — re-asserted here at the full-form integration level | submit, mock a differing server response | confirmation shows the server value, not the pre-submit badge |
 | WeeklyAssessmentPage: already-submitted-this-week renders read-only with "Edit" | mock `useAssessmentsForStudent` containing an entry for the current week | render that student's form | read-only view + "Edit" affordance, not an open editable form allowing a silent duplicate submit — explicitly a UX convenience per 8-4, not a guaranteed duplicate-prevention (the backend's own uniqueness rule, if any, remains authoritative; this test does not claim otherwise) |
 | WeeklyAssessmentPage: one form per student, submitted independently | render a cohort with 3 members | submit one student's form | only that student's `useSubmitAssessment` mutation fires; the other two forms remain untouched/unsubmitted |

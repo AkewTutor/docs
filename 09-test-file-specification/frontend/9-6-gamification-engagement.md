@@ -11,7 +11,7 @@
 | Source file | FRs covered |
 |---|---|
 | hooks/useGamification.ts (useMyProgress, useLeaderboard, useMyBadges, useActiveChallenges, useMyChallengeProgress) | FR-SP-039–040, FR-GA-002–006 |
-| hooks/useAdminGamification.ts (useAllBadges, useAdjustBadge) | FR-GA-005, FR-AD-004 |
+| hooks/useAdminGamification.ts (useAllBadges, useCreateBadge, useAdjustBadge, useAdjustStudentXP) | FR-GA-005, FR-AD-004, FR-AD-018 — **I2 fix** |
 | hooks/useChallenges.ts (useCreateChallenge) | FR-SP-040, FR-GA-004 |
 | components/StreakFlame.tsx | FR-GA-006 (streak independence from XP/badges) |
 | components/LeaderboardTable.tsx | FR-GA-002 (first-name+last-initial only) |
@@ -94,6 +94,9 @@ FRs: FR-GA-002. **OWASP: A01:2021 – Broken Access Control / privacy — leader
 |---|---|---|---|
 | Category filter re-queries | change filter to `TUTOR` | — | `useAllBadges('TUTOR', page)` re-invoked |
 | Edit form wires to `useAdjustBadge` with only the changed fields | open edit, change `isActive` | submit | `useAdjustBadge().mutate({ id, ...changes })` called |
+| Create form wires to `useCreateBadge` — **I2 fix** | open "Create badge," fill `name`/`description`/`category`/`criteriaDescription` | submit | `useCreateBadge().mutate({ name, description, category, criteriaDescription })` called; on success the badge list re-renders (via `[ADMIN_BADGES]` invalidation) |
+| XP adjustment form requires a note — **I2 fix** | open "Adjust student XP," enter `studentId`/`amount` but leave `note` empty | attempt submit | `useAdjustStudentXP().mutate` is not called; a validation message is shown |
+| XP adjustment form wires through signed amount and note — **I2 fix** | fill `studentId: "s1"`, `amount: -20`, `note: "Correction"` | submit | `useAdjustStudentXP().mutate({ studentId: "s1", amount: -20, note: "Correction" })` called |
 | `endsAt` must be after `startsAt`, validated client-side | set `endsAt` earlier than `startsAt` | submit | blocked before `useCreateChallenge().mutate` fires |
 | List reuses `useActiveChallenges` (flagged gap acknowledged) | render the page | — | the currently-active list renders as documented; this test doc does not fabricate a "past challenges" test against an endpoint that, per 8-6, may not yet exist — see §9.8 |
 

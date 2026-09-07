@@ -3,6 +3,9 @@
 
 **Depends on:** Shared Config, Messaging, Class Delivery & Library (hard); soft-integrates with Payments & Earnings (refund action) and Accounts & Guardianship (suspension action) — neither surfaces as a direct client-side call from this feature's own hooks, since both happen server-side inside `PATCH /admin/disputes/:complaintId` (frontend spec header).
 
+**Links back to:** [07-frontend-specification/08-support-trust-admin-frontend.md], [05b. Frontend Folder & File Structure §8]
+**Links forward to:** [9-8. Frontend Test Spec: Support, Trust & Admin Reporting]
+
 ---
 
 ### Shared Pattern: Simple Query Hook

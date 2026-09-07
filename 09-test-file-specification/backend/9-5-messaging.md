@@ -140,7 +140,7 @@ FRs: FR-MS-004, FR-AD-017. **OWASP: A01:2021 – Broken Access Control (Admin-on
 
 - **`archiveMessageThreads.job.ts` interval scheduling** — no business logic of its own; the archiving effect it produces is already covered via `messaging.service.test.ts`'s archived-thread-still-readable case, and the cron registration itself is excluded per the standing convention.
 - **Message content moderation/profanity filtering** — **explicitly flagged as an open item**: no automated content filter is documented anywhere in Docs 02/06/08 for `sendMessage`; the only content-safety control specified is manual Admin review-and-close (FR-MS-004). This test suite does not fabricate a moderation test for a control that was never specified, but records the gap for whoever owns Section 14/15 to consider before launch.
-- **Server-side rate limiting on `sendMessage`** — same class of gap as 9-1's login/verification rate-limiting note (OWASP A04:2021 — Insecure Design / spam-flood risk): no limit is documented for this endpoint.
+- **Server-side rate limiting on `sendMessage`** — resolved (Doc 02 NFR-013): `rateLimiter.middleware.ts` (30/min per account) is applied at the route level and unit-tested in `9-1-shared-config.md`'s `rateLimiter.middleware.test.ts` section — not re-tested per-feature, since the middleware itself is feature-agnostic and its application here is a one-line route change (`8-5-messaging.md`).
 - **Real-time delivery (WebSocket/push) of new messages** — the backend's contract here is REST create/read; any live-update transport is a frontend/infrastructure concern outside this feature's `src/services/*`.
 - **Jitsi/video conferencing** — unrelated to this feature; see `class-delivery-library`'s test doc (9-4) for that boundary.
 

@@ -3,6 +3,9 @@
 
 Covers every frontend file not owned by a single feature — types, constants, the full routing tree, axios, and the shared layouts — plus this feature's own owned files (auth, notifications, policies, announcements). Shared-config is the foundation feature (Feature Decomposition §1.1's "no dependency of any kind"), which is why the cross-cutting infra lives here rather than in its own separate file.
 
+**Links back to:** [07-frontend-specification/01-shared-config-frontend.md], [05b. Frontend Folder & File Structure §1]
+**Links forward to:** [9-1. Frontend Test Spec: Shared Config]
+
 ---
 
 ### src/types/index.ts (full file — consolidated across all 8 features)
@@ -34,78 +37,128 @@ One interface block per feature, copied field-for-field from each `07-frontend-s
 
 ### src/routes/index.tsx (full file)
 
-Standard React Router v7 declarative API (`<Routes>`/`<Route>`), per the base template (frontend conventions header) — no data-router migration is called for here since nothing in Doc 05b or 07 documents that pattern for this project.
+**Fix (2026-09-07 audit):** earlier drafts of this file specified React Router's classic declarative API (`<Routes>`/`<Route>`, an `AppRoutes` component) and mis-cited that as "per the base template." The base template (`template-react` v3, §2.5/§9.1) actually mandates React Router v7's **data-router API** — `createBrowserRouter()` building an object-based route tree, consumed by `<RouterProvider>` in `App.tsx`, with `router` (not a component) as the default export — specifically so every page can be individually code-split via `React.lazy()` + a per-route `Suspense` boundary. Rewritten below to match. Nothing about the route/guard/layout structure itself changes — only the API used to express it.
 
 ```tsx
-import { Routes, Route } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { createBrowserRouter } from 'react-router-dom';
 import PublicLayout from '@/components/layouts/PublicLayout';
 import AuthLayout from '@/components/layouts/AuthLayout';
 import DashboardLayout from '@/components/layouts/DashboardLayout';
 import ProtectedRoute from './ProtectedRoute';
 import PublicRoute from './PublicRoute';
-// ...page imports, one per ROUTES entry
+// ...lazy page imports, one per ROUTES entry, e.g.:
+// const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
 
-export default function AppRoutes() {
+function PageLoader() {
   return (
-    <Routes>
-      <Route element={<PublicLayout />}>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/policies/:type" element={<PolicyPage />} />
-      </Route>
-
-      <Route element={<PublicRoute />}>
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register/student" element={<RegisterPage mode="student" />} />
-          <Route path="/register/parent" element={<RegisterPage mode="parent" />} />
-          <Route path="/register/tutor" element={<RegisterPage mode="tutor" />} />
-          <Route path="/verify-contact" element={<VerifyContactPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/invite/:token/activate" element={<InviteActivationPage />} />
-        </Route>
-      </Route>
-
-      {/* /student/* and /parent/* are NOT wrapped in one blanket ProtectedRoute here — several
-          /student/... leaf routes are Parent-reachable too (find-tutor, upcoming-classes,
-          achievements, etc.). Each leaf route below carries its own ProtectedRoute with the
-          exact role set (or 'any') declared in its owning feature file (8-2 through 8-8);
-          DashboardLayout is still shared since all four roles use the same shell. */}
-      <Route element={<DashboardLayout />}>
-        <Route path="/student/*" element={/* StudentRoutes — each leaf route individually wrapped in ProtectedRoute(roles) per its owning feature file below; role sets vary per route (e.g. ['STUDENT'] for /student/profile, ['STUDENT','PARENT'] for /student/find-tutor, 'any' for /student/achievements) */ null} />
-        <Route path="/parent/*" element={null /* ParentRoutes — same per-leaf-route pattern */} />
-      </Route>
-      <Route element={<ProtectedRoute roles={['TUTOR']} />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/tutor/*" element={null /* TutorRoutes */} />
-        </Route>
-      </Route>
-      <Route element={<ProtectedRoute roles={['ADMIN']} />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/admin/*" element={null /* AdminRoutes */} />
-        </Route>
-      </Route>
-
-      <Route element={<ProtectedRoute roles="any" />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/messaging" element={<MessagingPage />} />
-          <Route path="/library" element={<LibraryPage />} />
-          <Route path="/recording-consent" element={<RecordingConsentPage />} />
-          <Route path="/reschedule/:sessionId" element={<RequestReschedulePage />} />
-          <Route path="/payments" element={<PaymentPage />} />
-          <Route path="/payments/history" element={<PaymentHistoryPage />} />
-          <Route path="/payments/paused" element={<PaymentPausedPage />} />
-          <Route path="/complaints" element={<SubmitComplaintPage />} />
-          <Route path="/support" element={<SupportContactPage />} />
-        </Route>
-      </Route>
-
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <p className="text-muted-foreground text-sm">Loading...</p>
+    </div>
   );
 }
+
+// Wrap each lazy element so Suspense boundaries stay per-page, per template §9.1.
+const withSuspense = (element: React.ReactNode) => (
+  <Suspense fallback={<PageLoader />}>{element}</Suspense>
+);
+
+const router = createBrowserRouter([
+  {
+    element: <PublicLayout />,
+    children: [
+      { path: '/', element: withSuspense(<LandingPage />) },
+      { path: '/policies/:type', element: withSuspense(<PolicyPage />) },
+    ],
+  },
+
+  {
+    element: <PublicRoute />,
+    children: [
+      {
+        element: <AuthLayout />,
+        children: [
+          { path: '/login', element: withSuspense(<LoginPage />) },
+          { path: '/register/student', element: withSuspense(<RegisterPage mode="student" />) },
+          { path: '/register/parent', element: withSuspense(<RegisterPage mode="parent" />) },
+          { path: '/register/tutor', element: withSuspense(<RegisterPage mode="tutor" />) },
+          { path: '/verify-contact', element: withSuspense(<VerifyContactPage />) },
+          { path: '/forgot-password', element: withSuspense(<ForgotPasswordPage />) },
+          { path: '/reset-password', element: withSuspense(<ResetPasswordPage />) },
+          { path: '/invite/:token/activate', element: withSuspense(<InviteActivationPage />) },
+        ],
+      },
+    ],
+  },
+
+  // /student/* and /parent/* are NOT wrapped in one blanket ProtectedRoute here — several
+  // /student/... leaf routes are Parent-reachable too (find-tutor, upcoming-classes,
+  // achievements, etc.). Each leaf route below carries its own ProtectedRoute with the
+  // exact role set (or 'any') declared in its owning feature file (8-2 through 8-8);
+  // DashboardLayout is still shared since all four roles use the same shell.
+  {
+    element: <DashboardLayout />,
+    children: [
+      {
+        path: '/student/*',
+        // StudentRoutes — each leaf route individually wrapped in ProtectedRoute(roles) per its
+        // owning feature file below; role sets vary per route (e.g. ['STUDENT'] for
+        // /student/profile, ['STUDENT','PARENT'] for /student/find-tutor, 'any' for /student/achievements)
+        children: [], // populated by 8-2 through 8-8
+      },
+      {
+        path: '/parent/*',
+        children: [], // ParentRoutes — same per-leaf-route pattern
+      },
+    ],
+  },
+  {
+    element: <ProtectedRoute roles={['TUTOR']} />,
+    children: [
+      {
+        element: <DashboardLayout />,
+        children: [{ path: '/tutor/*', children: [] /* TutorRoutes */ }],
+      },
+    ],
+  },
+  {
+    element: <ProtectedRoute roles={['ADMIN']} />,
+    children: [
+      {
+        element: <DashboardLayout />,
+        children: [{ path: '/admin/*', children: [] /* AdminRoutes */ }],
+      },
+    ],
+  },
+
+  {
+    element: <ProtectedRoute roles="any" />,
+    children: [
+      {
+        element: <DashboardLayout />,
+        children: [
+          { path: '/notifications', element: withSuspense(<NotificationsPage />) },
+          { path: '/messaging', element: withSuspense(<MessagingPage />) },
+          { path: '/library', element: withSuspense(<LibraryPage />) },
+          { path: '/recording-consent', element: withSuspense(<RecordingConsentPage />) },
+          { path: '/reschedule/:sessionId', element: withSuspense(<RequestReschedulePage />) },
+          { path: '/payments', element: withSuspense(<PaymentPage />) },
+          { path: '/payments/history', element: withSuspense(<PaymentHistoryPage />) },
+          { path: '/payments/paused', element: withSuspense(<PaymentPausedPage />) },
+          { path: '/complaints', element: withSuspense(<SubmitComplaintPage />) },
+          { path: '/support', element: withSuspense(<SupportContactPage />) },
+        ],
+      },
+    ],
+  },
+
+  { path: '*', element: withSuspense(<NotFoundPage />) },
+]);
+
+export default router;
 ```
+
+`router` is consumed in `src/App.tsx` via `<RouterProvider router={router} />`, per template §9.1 — `App.tsx` also wraps this in the template's `ErrorBoundary` (template §10.3) and the `QueryClientProvider`.
 The exact leaf routes under each `/student/*`, `/parent/*`, `/tutor/*`, `/admin/*` block are enumerated in full in each owning feature's own file below (8-2 through 8-8) — this file only fixes the four dashboard mount points plus the shared/public/any-role routes that belong to no single feature. `ProtectedRoute`'s `roles` prop accepts either a `Role[]` or the literal string `'any'`, matching frontend conventions §0.2's four route categories. `/tutor/*` and `/admin/*` are wrapped in one blanket guard above because every leaf route in those two features is in fact role-exclusive; `/student/*` and `/parent/*` are not, since Parent-reachable leaf routes exist under the `/student/` prefix (frontend conventions §0.2's callout) — those two guard themselves per-route instead.
 
 ---
@@ -146,7 +199,8 @@ The exact leaf routes under each `/student/*`, `/parent/*`, `/tutor/*`, `/admin/
 | Field | Detail |
 |---|---|
 | Request interceptor | Attaches `Authorization: Bearer <token>` from `auth.store.ts` on every request when a token is present, per frontend conventions §0.4 — no separate unauthenticated client instance. |
-| Response interceptor (401) | Per frontend conventions §0.6: (1) clear `auth.store.ts` (token + user), (2) redirect to `/login?returnTo=<currentPath>`. |
+| Response interceptor (401) | Per frontend conventions §0.6 (Critical-fix #1 revision): on a `401`, (1) if `auth.store.ts` has a `refreshToken`, call `POST /auth/refresh` once with it — on success, call `setAuth` with the new `accessToken`/`refreshToken`/existing `user` and retry the original request with the new access token; (2) if the refresh call itself fails (expired/reused/missing refresh token), or no `refreshToken` was stored, clear `auth.store.ts` (token + refreshToken + user) and redirect to `/login?returnTo=<currentPath>`. |
+| Refresh concurrency | Multiple requests failing with `401` at once must trigger only one `/auth/refresh` call, not one per request — in-flight requests queue behind the single refresh promise and retry once it resolves, since the refresh token is single-use/rotating (NFR-015) and a second concurrent call would revoke the token the first call is still using. |
 | M8 fix — resolved | Doc 05b's file inventory previously described this interceptor as redirecting "to the correct login route based on the failing request's role prefix," implying multiple login destinations. That line is now corrected at the source (`05b-frontend-structure.md`) to match this file and Doc 07 §0.6's single `/login?returnTo=` design — all three docs now agree, nothing left to confirm. |
 | Envelope unwrap | `SuccessResponse`/`ErrorResponse` (00-api-conventions §0.1) unwrapped once in the interceptor so every hook's `.then((r) => r.data)` receives the inner `data` payload directly, not the full envelope. |
 
@@ -173,11 +227,11 @@ The exact leaf routes under each `/student/*`, `/parent/*`, `/tutor/*`, `/admin/
 
 | Field | Detail |
 |---|---|
-| Shape | `{ token: string \| null; user: AuthUser \| null; setAuth: (token: string, user: AuthUser) => void; logout: () => void }` |
+| Shape | `{ token: string \| null; refreshToken: string \| null; user: AuthUser \| null; setAuth: (token: string, refreshToken: string, user: AuthUser) => void; logout: () => void }` |
 | Persistence | Zustand `persist` middleware, storage key `auth-storage` — the only persisted client state in the app (frontend conventions §0.3). |
-| `setAuth` | Sets both fields in one call — never independently, since a `token` without a matching `user` (or vice versa) is an invalid intermediate state every `ProtectedRoute`/sidebar role-check could observe mid-render. |
-| `logout` | Clears both fields to `null`. Does **not** itself call `POST /auth/logout` — composed together only inside `useLogout` below, so nothing else in the codebase calls `logout()` directly and skips the API call. |
-| Edge cases | A stale/expired persisted token is not proactively cleared by the store — discovered lazily on the next authenticated request's `401`, handled by the axios interceptor above. |
+| `setAuth` | Sets all three fields in one call — never independently, since a `token` without a matching `user` (or vice versa) is an invalid intermediate state every `ProtectedRoute`/sidebar role-check could observe mid-render. `refreshToken` is required alongside `token`/`user` for the same reason: a session with an access token but no stored refresh token cannot survive the 30-minute TTL (NFR-014), so partial auth state is never valid. |
+| `logout` | Clears all three fields to `null`. Does **not** itself call `POST /auth/logout` — composed together only inside `useLogout` below, so nothing else in the codebase calls `logout()` directly and skips the API call. |
+| Edge cases | A stale/expired persisted access token is not proactively cleared by the store — discovered lazily on the next authenticated request's `401`, handled by the axios interceptor's refresh-then-redirect flow below. |
 | Test file | `tests/store/auth.store.test.ts` |
 
 ---
@@ -200,7 +254,7 @@ The exact leaf routes under each `/student/*`, `/parent/*`, `/tutor/*`, `/admin/
 |---|---|
 | Signature | `useLogin(): UseMutationResult<LoginResponse, AxiosError, { identifier: string; password: string }>` |
 | Purpose | Wraps `POST /auth/login`. |
-| Side effects | `onSuccess` calls `authStore.setAuth(data.accessToken, data.user)` — no query invalidation needed, since no authenticated query can have run before a token exists. |
+| Side effects | `onSuccess` calls `authStore.setAuth(data.accessToken, data.refreshToken, data.user)` — no query invalidation needed, since no authenticated query can have run before a token exists. |
 | Edge cases | A `401` ("Invalid email/phone or password") is a genuine mutation error, rendered as a form-level banner by `LoginPage` — never attributed to a specific field, matching the API's deliberately generic message (frontend spec §1.8). |
 | Test file | `tests/hooks/useAuth.test.ts` |
 

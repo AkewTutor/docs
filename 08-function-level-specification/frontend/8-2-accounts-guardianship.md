@@ -3,6 +3,9 @@
 
 **Depends on:** Shared Config (hard — every page here requires `auth.store.ts`, `8-1`'s routing/layout shell).
 
+**Links back to:** [07-frontend-specification/02-accounts-guardianship-frontend.md], [05b. Frontend Folder & File Structure §2]
+**Links forward to:** [9-2. Frontend Test Spec: Accounts & Guardianship]
+
 ---
 
 ### Shared Pattern: Simple Query Hook (definition — reused by every feature file below)

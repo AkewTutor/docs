@@ -4,6 +4,9 @@
 
 **Owns:** ScheduledSession, RescheduleRequest, SessionMiss, RecordingConsent, Recording, LibraryMaterial, WeeklyAssessment. **Depends on:** Matching & Cohorts (hard, per Feature Decomposition §1.1) — every session belongs to a confirmed `Cohort`.
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §4], [Feature Decomposition §1]
+**Links forward to:** [8-4. Backend Function-Level Spec: Class Delivery, Recording & Library]
+
 ---
 
 ### 4.1 Endpoint Table

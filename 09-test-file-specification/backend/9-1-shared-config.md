@@ -13,12 +13,14 @@ Per the standing rule in `05a-backend-structure.md` ("every service file gets a 
 | Source file | FRs covered | NFRs covered |
 |---|---|---|
 | auth.middleware.ts | (enforces role/ownership gates for every other feature) | NFR-007, NFR-009 |
-| errorHandler.middleware.ts | — | NFR-007 (never leaks internals) |
+| error.middleware.ts | — | NFR-007 (never leaks internals) |
 | validate.middleware.ts | — | NFR-007 (input hygiene, first line of injection defense) |
-| jwt.ts | FR-SP-003 | NFR-007, NFR-008 |
+| jwt.ts | FR-SP-003 | NFR-007, NFR-008, NFR-014 |
+| refreshToken.ts | FR-SP-003 | NFR-014, NFR-015 |
+| rateLimiter.middleware.ts | — | NFR-013 |
 | password.ts | FR-SP-003 | NFR-008 |
 | pagination.ts | — (shared list helper referenced by NFR-004 at scale) | — |
-| auth.service.ts | FR-SP-001–005, FR-TU-001–002, FR-AC-002, FR-AC-005 | NFR-007, NFR-008 |
+| auth.service.ts | FR-SP-001–005, FR-TU-001–002, FR-AC-002, FR-AC-005 | NFR-007, NFR-008, NFR-013, NFR-014, NFR-015 |
 | notification.service.ts | FR-NO-001–011 | NFR-004 (must not block the triggering action) |
 | adminAnnouncement.service.ts | FR-AD-019 | — |
 | policy.service.ts | FR-SC-001, FR-AD-015 | NFR-010 (retains full version history, not a privacy risk here since content is public) |
@@ -33,10 +35,13 @@ NFR-001, NFR-002, NFR-003, NFR-005, NFR-006, and OWASP A06:2021 are intentionall
 |---|---|---|---|
 | prisma/schema.prisma | — | Not required (declarative, see 9.6) | — |
 | prisma/seed.ts | — | Not required (see 9.6) | — |
-| src/middleware/auth.middleware.ts | tests/middleware/auth.middleware.test.ts | Unit (mocked `jwt.ts`) | ☐ |
-| src/middleware/errorHandler.middleware.ts | tests/middleware/errorHandler.middleware.test.ts | Unit (mocked `req`/`res`/`next`) | ☐ |
-| src/middleware/validate.middleware.ts | tests/middleware/validate.middleware.test.ts | Unit (real Zod schemas, mocked `req`/`res`/`next`) | ☐ |
+| src/middlewares/auth.middleware.ts | tests/middlewares/auth.middleware.test.ts | Unit (mocked `jwt.ts`) | ☐ |
+| src/middlewares/error.middleware.ts | tests/middlewares/error.middleware.test.ts | Unit (mocked `req`/`res`/`next`) | ☐ |
+| src/middlewares/validate.middleware.ts | tests/middlewares/validate.middleware.test.ts | Unit (real Zod schemas, mocked `req`/`res`/`next`) | ☐ |
+| src/middlewares/rateLimiter.middleware.ts | tests/middlewares/rateLimiter.middleware.test.ts | Unit (real in-memory store, small `windowMs`/`max` for fast assertions) | ☐ |
+| src/config/rateLimits.ts | — | Not required (plain constants, no branching logic) | — |
 | src/utils/jwt.ts | tests/utils/jwt.test.ts | Unit (real `jsonwebtoken`, test secret) | ☐ |
+| src/utils/refreshToken.ts | tests/utils/refreshToken.test.ts | Unit (real `crypto`) | ☐ |
 | src/utils/password.ts | tests/utils/password.test.ts | Unit (real `bcrypt`) | ☐ |
 | src/utils/pagination.ts | tests/utils/pagination.test.ts | Unit (pure function) | ☐ |
 | src/services/auth.service.ts | tests/services/auth.service.test.ts | Unit (mocked Prisma, bcrypt, jwt, sms/email clients) | ☐ |
@@ -85,13 +90,13 @@ FRs: (infrastructure for every authenticated FR). NFRs: NFR-007, NFR-009. **OWAS
 
 ---
 
-### 9.3 Test Case Detail — errorHandler.middleware.test.ts
+### 9.3 Test Case Detail — error.middleware.test.ts
 
 NFRs: NFR-007 (no internal detail leakage). **OWASP: A05:2021 – Security Misconfiguration, A09:2021 – Security Logging and Monitoring Failures.**
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| ApiError passed through | `err = new ApiError(404, "Not found", [])` | call `errorHandlerMiddleware(err, req, res, next)` | responds with the standard error envelope, `statusCode: 404`, `message: "Not found"`, `errors: []` |
+| ApiError passed through | `err = new ApiError(404, "Not found", [])` | call `errorMiddleware(err, req, res, next)` | responds with the standard error envelope, `statusCode: 404`, `message: "Not found"`, `errors: []` |
 | ApiError with field errors | `err = new ApiError(400, "Validation failed", [{ field: "email", message: "Invalid email" }])` | call handler | `errors` array passed through unchanged |
 | Unrecognized/unexpected error | `err = new TypeError("Cannot read property 'x' of undefined")` | call handler | responds `500` with a generic message (e.g. `"Internal server error"`) — **the raw error message and stack are never included in the response body** |
 | Unrecognized error is logged server-side | spy on the logger (`console.error` or the project's logger module) | call handler with a generic `Error` | assert the logger was called with the real error/stack — confirms the detail is captured for operators even though it's withheld from the client (OWASP A09 — don't silently swallow) |
@@ -229,7 +234,36 @@ FRs: FR-SP-001–005, FR-TU-001–002, FR-AC-002, FR-AC-005. NFRs: NFR-007, NFR-
 | Valid code verifies phone | mock a matching code issued for the phone channel | call `verifyContact(userId, code)` | resolves `{ phoneVerifiedAt: <timestamp> }` |
 | Invalid or expired code | mock no matching code / an expired one | call `verifyContact(userId, badCode)` | throws `ApiError(400, "Invalid or expired code — request a new one")` |
 | resendVerification regenerates without penalizing the original attempt | mock the existing code lookup | call `resendVerification(userId)` | a new code is generated/dispatched; no lockout or failure state is introduced by a prior failed/expired attempt |
-| No server-side rate limit on resend (documented gap, not silently assumed) | — | call `resendVerification(userId)` many times in a row within the unit test | **flagged, not implemented:** per Doc 8-1, no rate limit is enforced server-side on this endpoint — do not write a test asserting throttling behavior that doesn't exist in the spec; instead, see 9.11's open-item note recommending this be revisited as an OWASP A04 (Insecure Design) / resource-exhaustion concern before launch |
+| resetPassword revokes all refresh tokens | mock a valid reset, mock 2+ active `RefreshToken` rows for the user | call `resetPassword(userId, code, newPassword)` | asserts `logoutAll(userId)` is called / all matching `RefreshToken` rows end up with `revokedAt` set (NFR-015) |
+
+#### rateLimiter.middleware.ts
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Under limit passes through | rate limiter configured with a count below `max` for the request's key | call middleware with `req` matching the configured key | `next()` called, no response sent |
+| Over limit returns 429 | rate limiter configured with a count at/above `max` for the request's key | call middleware | `ApiError(429, "Too many requests, please try again later")`, standard error envelope |
+| Distinct keys don't interfere | two different `identifier+ip` (or `userId`) values, one over limit | call middleware for each | the under-limit key still passes; the over-limit key is blocked |
+
+#### refreshToken.ts
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| generateRefreshToken produces distinct values | — | call twice | two different opaque strings |
+| hashRefreshToken is deterministic | — | hash the same raw string twice | identical hash both times |
+| hashRefreshToken output differs for different inputs | — | hash two different raw strings | different hashes |
+
+#### login / refreshAccessToken / logout / logoutAll (refresh-token flow)
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Login issues both tokens | valid credentials | call `login(identifier, password)` | resolves `{ accessToken, refreshToken, user }`; a `RefreshToken` row is created with a hashed value and a fresh `familyId` |
+| Refresh rotates the token | mock a valid, unrevoked, unexpired `RefreshToken` | call `refreshAccessToken(rawToken)` | old token gets `revokedAt` + `replacedByTokenId` set; a new token is created with the same `familyId`; resolves a new `{ accessToken, refreshToken }` |
+| Refresh with expired token | mock an expired `RefreshToken` | call `refreshAccessToken(rawToken)` | throws `ApiError(401, "Session expired — please log in again")` |
+| Refresh with unknown token | mock no matching row | call `refreshAccessToken(rawToken)` | throws the identical `ApiError(401, ...)` as the expired case |
+| Reuse detection revokes the whole family | mock a `RefreshToken` row that already has `revokedAt` set (previously rotated) | call `refreshAccessToken(thatRawToken)` | throws the identical `ApiError(401, ...)`; asserts every `RefreshToken` sharing that `familyId` now has `revokedAt` set |
+| Logout revokes only the presented token | mock 2+ active tokens for a user | call `logout(oneRawToken)` | only the matching token is revoked; the other remains active |
+| Logout is a no-op for an already-revoked/unknown token | mock no matching active row | call `logout(rawToken)` | resolves without throwing |
+| logoutAll revokes every token for the user, not others | mock tokens for user A and user B | call `logoutAll(userA.id)` | all of user A's tokens are `revokedAt` set; user B's are untouched |
 
 ---
 
@@ -421,7 +455,7 @@ FRs: FR-SC-001, FR-AD-015.
 - **`src/jobs/scheduler.ts` and the interval-registration wrapper in `notificationRetry.job.ts`** — no business logic of their own (Doc 8-1); the logic they call is already covered via `notification.service.test.ts`'s `retryFailed` cases directly.
 - **Real Geez SMS / Brevo network behavior** — `sms.client.ts`/`email.client.ts` are unit-tested against a mocked HTTP layer only; actual provider auth, deliverability, and response-shape drift need a manual or separately-tracked integration pass.
 - **Real bcrypt/JWT cryptographic strength** (cost factor tuning, key rotation) — unit tests confirm the functions are *called* correctly and produce internally-consistent results; production-grade parameter choices (bcrypt rounds, `JWT_SECRET` length/entropy, key rotation policy) are a security-review/config concern, not a unit-test assertion.
-- **Server-side rate limiting on login, resend-verification, or forgot-password** — **explicitly flagged as an open item**: no rate limit is documented anywhere in Docs 02/06/08 for these endpoints. This is a real OWASP A04:2021 (Insecure Design) / brute-force gap worth raising with whoever owns Section 15 (NFRs) before launch — this test suite does not fabricate a rate-limit test for a control that was never specified, but this doc records the gap rather than silently ignoring it (see 9.8's `resendVerification` note and the login brute-force risk generally).
+- **In-memory rate-limit behavior under production load** — `rateLimiter.middleware.test.ts` exercises the real in-memory store directly, but per-process counter correctness under concurrent multi-instance traffic (should the platform ever scale horizontally) is a load-test/staging concern, not a unit-test assertion. Server-side rate limiting itself is no longer an open item (Doc 02 NFR-013, resolved) — see the `rateLimiter.middleware.ts` and `login`/`resendVerification`/`requestPasswordReset` test cases above.
 - **CSRF** — not applicable in the traditional sense; this is a stateless Bearer-JWT API with no cookie-based session, so CSRF tokens are out of scope by design, not by oversight.
 
 ---

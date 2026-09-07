@@ -5,6 +5,9 @@
 
 **Owns UI for:** registration/login, notifications, policy pages, platform announcements (Doc 05b §1). No backend dependency (foundation feature).
 
+**Links back to:** [0. Frontend Conventions], [06-api/01-shared-config-api.md], [05b. Frontend Folder & File Structure §1]
+**Links forward to:** [8-1. Frontend Function-Level Spec: Shared Config]
+
 ---
 
 ### 1.1 Routes

@@ -5,6 +5,9 @@
 
 All monetary fields are `string` (Decimal-as-string) throughout this feature (§7.2) — no component or hook in this file ever calls `parseFloat()`/`Number()` on a money field for arithmetic; see `src/lib/money.ts` below for the one sanctioned exception (display-only, not computational).
 
+**Links back to:** [07-frontend-specification/07-payments-earnings-frontend.md], [05b. Frontend Folder & File Structure §7]
+**Links forward to:** [9-7. Frontend Test Spec: Payments & Earnings]
+
 ---
 
 ### Shared Pattern: Simple Query Hook
@@ -25,6 +28,7 @@ All monetary fields are `string` (Decimal-as-string) throughout this feature (§
 |---|---|---|
 | useUpdatePricing (admin) | PUT /admin/pricing/:format | [PRICING] |
 | useApproveRefund (admin) | POST /admin/refunds/:id/approve | [REFUNDS] |
+| useRejectRefund (admin) | POST /admin/refunds/:id/reject | [REFUNDS] — **I1 fix** |
 | useMarkPaid (admin) | POST /admin/payouts/:id/mark-paid | [PAYOUTS] |
 | useCreatePromotion (admin) | POST /admin/promotions | [PROMOTIONS] |
 
@@ -122,8 +126,8 @@ All monetary fields are `string` (Decimal-as-string) throughout this feature (§
 | Field | Detail |
 |---|---|
 | Route | `/admin/refunds` — `ProtectedRoute(['ADMIN'])` + `DashboardLayout(AdminSidebar)` |
-| `RefundCard` props | `{ refund: RefundCase; onApprove: () => void }` |
-| Behavior | Renders `amount` (via `formatMoney`) + `reason` + a proration breakdown (whatever fields the API's refund-detail response includes, rendered as a simple list, not recomputed client-side); "Approve" wired to `useApproveRefund`. |
+| `RefundCard` props | `{ refund: RefundCase; onApprove: () => void; onReject: (rejectionReason: string) => void }` — **I1 fix** |
+| Behavior | Renders `amount` (via `formatMoney`) + `reason` + `status` + a proration breakdown (whatever fields the API's refund-detail response includes, rendered as a simple list, not recomputed client-side); "Approve" wired to `useApproveRefund`. "Reject" (only shown when `status === 'PENDING'`) opens a required reason prompt, then wires to `useRejectRefund` — **I1 fix**. Once `status` is `APPROVED` or `REJECTED`, both actions are hidden and the card instead shows the audit trail (`approvedBy`/`approvedAt` or `rejectedBy`/`rejectedAt`/`rejectionReason`). |
 
 **States (page):** loading · empty (`refunds: []` — queue clear) · success
 

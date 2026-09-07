@@ -3,6 +3,9 @@
 
 **Depends on:** Accounts & Guardianship (hard — a search/recommendation is meaningless without an existing student/tutor profile).
 
+**Links back to:** [07-frontend-specification/03-matching-cohorts-frontend.md], [05b. Frontend Folder & File Structure §3]
+**Links forward to:** [9-3. Frontend Test Spec: Matching & Cohorts]
+
 ---
 
 ### Shared Pattern: Simple Query Hook

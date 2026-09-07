@@ -5,7 +5,7 @@
 **Links back to:** [04. Database & Data Model], [Feature Decomposition]
 **Links forward to:** [06. API Specification], [08. Function-Level Specification]
 
-**Base template:** Node/Express (same convention as the reference project's `template-node-express`) — `src/{schemas,services,controllers,routes,middleware,utils,jobs}`, Prisma ORM, Zod validation, Vitest for tests.
+**Base template:** Node/Express (same convention as the reference project's `template-node-express`) — `src/{schemas,services,controllers,routes,middlewares,utils,jobs}`, Prisma ORM, Zod validation, Vitest for tests.
 
 **Structuring principle:** Files are grouped by the 8 features defined in `feature-decomposition.md`, not by technical layer alone — every feature gets its own slice through `schemas/`, `services/`, `controllers/`, `routes/`, and `jobs/`, mirroring the parallelizable build order so a team can work feature-by-feature with minimal file collisions. Cross-cutting foundations that no single feature owns are listed separately in Section 0.
 
@@ -19,29 +19,32 @@ These exist before any feature and are not owned by one feature's team.
 
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
-| `src/middleware/auth.middleware.ts` | Middleware | verifies JWT, attaches `req.user`; role check via a `requireRole(...roles)` wrapper — no separate `adminOnly.middleware.ts` needed since the wrapper covers it | jwt utils |
-| `src/middleware/errorHandler.middleware.ts` | Middleware | centralized error → HTTP response mapping | — |
-| `src/middleware/validate.middleware.ts` | Middleware | Zod schema validation wrapper for request body/query/params | zod |
-| `src/utils/jwt.ts` | Util | sign/verify access tokens | env config |
+| `src/middlewares/auth.middleware.ts` | Middleware | verifies JWT, attaches `req.user`; role check via a `requireRole(...roles)` wrapper — no separate `adminOnly.middleware.ts` needed since the wrapper covers it | jwt utils |
+| `src/middlewares/error.middleware.ts` | Middleware | centralized error → HTTP response mapping | — |
+| `src/middlewares/validate.middleware.ts` | Middleware | Zod schema validation wrapper for request body/query/params | zod |
+| `src/middlewares/rateLimiter.middleware.ts` | Middleware | In-memory per-endpoint rate limiting (NFR-013) — login, resend-verification, forgot-password, payment initiation, send-message | express-rate-limit |
+| `src/config/rateLimits.ts` | Config | named threshold constants consumed by `rateLimiter.middleware.ts` call sites | — |
+| `src/utils/jwt.ts` | Util | sign/verify access tokens (30-min TTL, NFR-014) | env config |
+| `src/utils/refreshToken.ts` | Util | generate/hash opaque refresh tokens (30-day TTL, rotation + reuse detection, NFR-014/015) | crypto (node built-in) |
 | `src/utils/password.ts` | Util | bcrypt hash/compare | — |
-| `src/utils/prisma.ts` | Util | shared Prisma client instance | prisma |
+| `src/config/db.ts` | Config | shared Prisma client instance, Prisma 7 driver-adapter pattern (pg `Pool` → `@prisma/adapter-pg` → `PrismaClient`), per template §5.2 — moved here from `src/utils/prisma.ts` to match the template's folder contract (`src/config/` = "external connections — DB and validated env vars") | prisma, pg, @prisma/adapter-pg, env config |
 | `src/utils/pagination.ts` | Util | shared list/pagination helper used across every controller | — |
 | `src/jobs/scheduler.ts` | Util | registers all cron/interval jobs listed under each feature below | node-cron (or equivalent) |
-| `prisma/schema.prisma` | Schema | full schema from Doc 04 (39 entities, all enums) | — |
-| `prisma/seed.ts` | Seed script | bootstraps the first Admin user and the base `Subject` catalog | prisma |
-| `tests/utils/*.test.ts` | Test | mirrors each cross-cutting util | — |
+| `prisma/schema.prisma` | Schema | full schema from Doc 04 (40 entities, all enums) | — |
+| `prisma/seed.ts` | Seed script | bootstraps the first Admin user, the base `Subject` catalog, and a default `PricingConfig` row per `TutoringFormat` (`ONE_TO_ONE`/`ONE_TO_THREE`/`ONE_TO_FIVE`) — **fix (audit):** without this, `matching-cohorts` has no active price to read on a fresh clone/test DB, since `payments-earnings` (which owns `PricingConfig`) is built and seeded last in build order but is read from as early as the first `Cohort` reaching `PENDING_PAYMENT` | prisma |
+| `tests/utils/*.test.ts`, `tests/middlewares/*.test.ts` | Test | mirrors each cross-cutting util/middleware | — |
 
 ---
 
 ## 1. Feature: `shared-config`
 
-**Owns:** User, Notification, PolicyDocument. **Depends on:** nothing (foundation feature).
+**Owns:** User, Notification, PolicyDocument, RefreshToken. **Depends on:** nothing (foundation feature).
 
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
 | `src/schemas/auth.schema.ts` | Zod schema | registerStudentSchema, registerParentSchema, registerTutorSchema, loginSchema, passwordResetRequestSchema, passwordResetSchema, verifyContactSchema | — |
-| `src/services/auth.service.ts` | Service | registerUser (role-aware), login, logout, requestPasswordReset, resetPassword, verifyContact, resendVerification | prisma, password.ts, jwt.ts, sms/email clients |
-| `src/controllers/auth.controller.ts` | Controller | register, login, logout, forgotPassword, resetPassword, verify handlers | auth.service.ts |
+| `src/services/auth.service.ts` | Service | registerUser (role-aware), login, refreshAccessToken, logout, logoutAll, requestPasswordReset, resetPassword, verifyContact, resendVerification | prisma, password.ts, jwt.ts, refreshToken.ts, sms/email clients |
+| `src/controllers/auth.controller.ts` | Controller | register, login, refresh, logout, logoutAll, forgotPassword, resetPassword, verify handlers | auth.service.ts |
 | `src/routes/auth.routes.ts` | Route | mounts `/auth/*` — public | auth.controller.ts |
 | `src/utils/providers/sms.client.ts` | Util | wraps Geez SMS (verification codes, SMS notification channel) | env config |
 | `src/utils/providers/email.client.ts` | Util | wraps Brevo (verification emails, email notification channel) | env config |
@@ -202,12 +205,14 @@ These exist before any feature and are not owned by one feature's team.
 
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
-| `src/services/xp.service.ts` | Service | awardXP (event-based), getLeaderboard (per-grade, first-name+last-initial, computed from ledger) | prisma |
-| `src/controllers/xp.controller.ts` | Controller | getMyProgress, getLeaderboard handlers | xp.service.ts |
-| `src/routes/xp.routes.ts` | Route | mounts `/gamification/xp/*`, `/gamification/leaderboard`; `authMiddleware` | xp.controller.ts |
-| `src/services/badge.service.ts` | Service | awardStudentBadge, awardTutorBadge, adminManageBadges (criteria review, never rating-based) | prisma |
-| `src/controllers/badge.controller.ts` | Controller | listMyBadges, adminListAll, adminAdjust handlers | badge.service.ts |
-| `src/routes/badge.routes.ts` | Route | mounts `/gamification/badges/*` and `/admin/badges/*`; `authMiddleware` | badge.controller.ts |
+| `src/services/xp.service.ts` | Service | awardXP (event-based), getLeaderboard (per-grade, first-name+last-initial, computed from ledger), adminAdjustXP (`reason: OTHER`, caller-supplied amount) — **I2 fix** | prisma |
+| `src/controllers/xp.controller.ts` | Controller | getMyProgress, getLeaderboard, adminAdjust handlers — **I2 fix** | xp.service.ts |
+| `src/schemas/xp.schema.ts` | Zod schema | adjustXPSchema — **I2 fix** | — |
+| `src/routes/xp.routes.ts` | Route | mounts `/gamification/xp/*`, `/gamification/leaderboard`, `/admin/students/:studentId/xp-adjustments` (Admin-only) — **I2 fix**; `authMiddleware` | xp.controller.ts |
+| `src/services/badge.service.ts` | Service | createBadge (admin) — **I2 fix**, awardStudentBadge, awardTutorBadge, adminManageBadges (criteria review, never rating-based) | prisma |
+| `src/controllers/badge.controller.ts` | Controller | listMyBadges, adminListAll, adminCreate, adminAdjust handlers — **I2 fix** | badge.service.ts |
+| `src/schemas/badge.schema.ts` | Zod schema | createBadgeSchema — **I2 fix** | — |
+| `src/routes/badge.routes.ts` | Route | mounts `/gamification/badges/*` and `/admin/badges/*` (GET, POST, PATCH — **I2 fix**); `authMiddleware` | badge.controller.ts |
 | `src/services/streak.service.ts` | Service | updateStreakOnActivity, resetStreakOnGap (internal, triggered by activity events) | prisma |
 | `tests/services/streak.service.test.ts` | Test | mirrors streak.service.ts | — |
 | `src/schemas/challenge.schema.ts` | Zod schema | createChallengeSchema | — |
@@ -238,8 +243,9 @@ These exist before any feature and are not owned by one feature's team.
 | `src/services/pricing.service.ts` | Service | getActiveConfig (per format), createAndActivateConfig (versioned, deactivates old) | prisma |
 | `src/controllers/pricing.controller.ts` | Controller | getActive, adminUpdate handlers | pricing.service.ts |
 | `src/routes/pricing.routes.ts` | Route | mounts `/pricing/*` (public GET) and `/admin/pricing/*` (admin mutate) | pricing.controller.ts |
-| `src/services/refund.service.ts` | Service | calculateProration (sessions-delivered formula), approveRefund | prisma |
-| `src/controllers/refund.controller.ts` | Controller | adminReview, adminApprove handlers | refund.service.ts |
+| `src/services/refund.service.ts` | Service | calculateProration (sessions-delivered formula), createPendingRefund, approveRefund, rejectRefund — **I1 fix** | prisma |
+| `src/schemas/refund.schema.ts` | Zod schema | rejectRefundSchema — **I1 fix** | — |
+| `src/controllers/refund.controller.ts` | Controller | adminReview, adminApprove, adminReject handlers — **I1 fix** | refund.service.ts |
 | `src/routes/refund.routes.ts` | Route | mounts `/admin/refunds/*`; `authMiddleware` + `requireRole(ADMIN)` | refund.controller.ts |
 | `src/services/earning.service.ts` | Service | creditEarning (FULL or REDUCED_MAKEUP rate), getEarningsForTutor | prisma |
 | `src/controllers/earning.controller.ts` | Controller | getMyEarnings handler | earning.service.ts |
@@ -265,7 +271,7 @@ These exist before any feature and are not owned by one feature's team.
 
 ## 8. Feature: `support-trust-admin`
 
-**Owns:** ComplaintReport. **Depends on:** `shared-config`, `messaging`, `class-delivery-library` (hard, via `aboutThreadId`/`aboutSessionId`); soft-integrates with `payments-earnings` (refund action from a dispute) and `accounts-guardianship` (suspension action from a dispute).
+**Owns:** ComplaintReport. **Depends on:** `shared-config`, `messaging`, `class-delivery-library` (hard, via `relatedThreadId`/`relatedSessionId`); soft-integrates with `payments-earnings` (refund action from a dispute, via `relatedPaymentId`/`relatedCohortId`) and `accounts-guardianship` (suspension action from a dispute).
 
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
@@ -289,8 +295,9 @@ These exist before any feature and are not owned by one feature's team.
 
 | File | Change |
 |---|---|
-| `prisma/schema.prisma` | Add all 39 models + enums from Doc 04 |
-| `.env.example` | Add `CHAPA_API_KEY`, `GEEZ_SMS_API_KEY`, `BREVO_API_KEY`, `CLOUDFLARE_R2_ACCESS_KEY`, `CLOUDFLARE_R2_SECRET_KEY`, `CLOUDFLARE_R2_BUCKET`, `JWT_SECRET`, `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD` |
+| `.env.example` | Add `CHAPA_API_KEY`, `GEEZ_SMS_API_KEY`, `BREVO_API_KEY`, `CLOUDFLARE_R2_ACCESS_KEY`, `CLOUDFLARE_R2_SECRET_KEY`, `CLOUDFLARE_R2_BUCKET`, `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`. (`JWT_SECRET` is already present in the template's `.env.example` — not re-added.) Change `JWT_EXPIRES_IN`'s default from the template's `7d` to `30m`, per NFR-014's 30-minute access-token TTL. |
+| `src/config/env.ts` | **Fix (was missing):** extend `envSchema` with all eight new keys above (`CHAPA_API_KEY`, `GEEZ_SMS_API_KEY`, `BREVO_API_KEY`, `CLOUDFLARE_R2_ACCESS_KEY`, `CLOUDFLARE_R2_SECRET_KEY`, `CLOUDFLARE_R2_BUCKET`, `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`), all `z.string()` and required (none should default-empty). Listing a var in `.env.example` alone is not enough — `envSchema` uses `z.object()`, which strips any key not explicitly declared, so an unlisted var reads as `undefined` via `env.X` even when present in `.env`. Also update `JWT_EXPIRES_IN`'s schema default to `'30m'` to match the `.env.example` change above. |
+| `prisma/schema.prisma` | Add all 40 models + enums from Doc 04 |
 | `package.json` | Add dependencies: Prisma client, Zod, bcrypt, jsonwebtoken, a Chapa SDK/HTTP client, an R2-compatible S3 client (`@aws-sdk/client-s3`), a cron/job scheduler |
 | `src/routes/index.ts` | Register every feature's routers, grouped by feature comment blocks in build order (Section 10) |
 
@@ -303,7 +310,7 @@ Follows the parallelizable build order from `feature-decomposition.md`. Steps wi
 **Phase 0 — Foundation**
 1. `prisma/schema.prisma` (migrate + generate)
 2. `prisma/seed.ts`
-3. Section 0 cross-cutting files (middleware, jwt/password/prisma utils, scheduler)
+3. Section 0 cross-cutting files (middleware, jwt/password utils, `src/config/db.ts`, scheduler)
 
 **Phase 1 — `shared-config`**
 4. `auth.schema.ts` → `auth.service.ts` → `auth.controller.ts` → `auth.routes.ts`

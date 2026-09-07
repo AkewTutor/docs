@@ -3,6 +3,9 @@
 
 **Owns:** MatchRequest, TutorExclusion, Cohort, CohortMembership, FormatSwitchRequest. **Depends on:** `accounts-guardianship` (hard) — matching cannot run without a student's academic profile or a tutor's ranked subjects/availability.
 
+**Links back to:** [06-api/03-matching-cohorts-api.md], [05a. Backend Folder & File Structure §3]
+**Links forward to:** [9-3. Backend Test Spec: Matching & Cohorts]
+
 ---
 
 ### src/schemas/matching.schema.ts (new)
@@ -248,8 +251,8 @@ Mounted at `/admin/matching`.
 | Signature | `requestSwitch(callerId, callerRole, studentId, toFormat): Promise<FormatSwitchResultDTO>` |
 | Purpose | Cancels the current match/cohort membership and spawns a fresh matching cycle under the new format (UC-61). |
 | Throws | `ApiError(409, "No active assignment to switch from")` — no active `CohortMembership`. `ApiError(400, "You are already in this format")` — `toFormat` equals current format. |
-| Side effects | Ends the caller's current `CohortMembership` via `cohort.service.ts`; creates a new `MatchRequest` via `matching.service.ts` under `toFormat`; calls `refund.service.ts` (`payments-earnings`, soft dependency) to prorate any remaining paid sessions in the current billing cycle. |
-| Edge cases | `refundId` is `null` only when zero remaining paid sessions existed to prorate. Other members of a group-format cohort, if any, are left entirely intact — this function never touches another member's `CohortMembership` row (UC-61 alternate flow). |
+| Side effects | Ends the caller's current `CohortMembership` via `cohort.service.ts`; creates a new `MatchRequest` via `matching.service.ts` under `toFormat`; calls `refund.service.ts → createPendingRefund(paymentId, 'FORMAT_SWITCH')` (`payments-earnings`, soft dependency — **I1 fix**: creates a `PENDING` `Refund` row for Admin review, it does not auto-approve) if remaining paid sessions exist in the current billing cycle. |
+| Edge cases | `refundId` is `null` only when zero remaining paid sessions existed to prorate — in that case `createPendingRefund` is never called. Other members of a group-format cohort, if any, are left entirely intact — this function never touches another member's `CohortMembership` row (UC-61 alternate flow). |
 
 Test file: `tests/services/formatSwitch.service.test.ts` — includes the cohort-mates-unaffected case.
 

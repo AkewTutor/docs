@@ -5,7 +5,7 @@
 **Links back to:** [01. Problem & Solution Statement]
 **Links forward to:** [03. Use Cases]
 
-**Version 3.2 — Amended Baseline**, incorporating the v3.1 amended baseline plus the resolution of seven previously-undefined mechanics (session cadence, match-percentage formula, group-splitting mechanics, XP point values, streak milestones, the V1 badge list, and monetary rounding — gaps `M3`, `M4`, `M5`, and `M7`) surfaced while cross-referencing this document against the Database & Data Model (Doc 04), API Specification (Doc 06), and Function-Level Specification (Doc 08) during Technical Specification drafting.
+**Version 3.3 — Amended Baseline**, incorporating the v3.2 amended baseline plus the resolution of two pre-implementation hardening items (server-side rate limiting; a refresh-token model) identified during the Pre-Implementation Checklist audit of Docs 01–09. See Section 18.7.
 
 *September 2026 · Confidential — For Project Use Only*
 
@@ -542,7 +542,7 @@ Matching considers the student's subject, grade (always a hard match), academic 
 > | `STREAK_MILESTONE` | 50 | Once per milestone reached: `currentStreakDays` hits 7, 30, or 90 (see the new streak-milestone note below) — not awarded again for the same milestone within one streak |
 > | `CHALLENGE_COMPLETED` | 30 (weekly challenge) / 100 (monthly challenge) | Once per `ChallengeProgress.completedAt` being set — amount depends on `Challenge.period`, not a flat value |
 > | `BADGE_AWARDED` | 25 | Once per `StudentBadge` row created (a flat bonus on top of whatever XP already led to earning the badge) |
-> | `OTHER` | Admin-specified, no fixed value | Reserved for manual Admin XP adjustments (e.g. goodwill, correcting an error) — the only reason where `amount` is caller-supplied rather than a constant |
+> | `OTHER` | Admin-specified, no fixed value | Reserved for manual Admin XP adjustments (e.g. goodwill, correcting an error) — the only reason where `amount` is caller-supplied rather than a constant. Reachable via `POST /admin/students/:studentId/xp-adjustments` (**I2 fix** — previously this row described a reason with no way to actually trigger it; see Doc 06 `06-gamification-engagement-api.md` and UC-88) |
 >
 > These are ordinary constants (`XP_VALUES` in a shared constants file, not schema-level data) — Admin cannot reconfigure them from the console in V1; a future version could move them into an Admin-editable table if that becomes a need.
 
@@ -550,7 +550,7 @@ Matching considers the student's subject, grade (always a hard match), academic 
 > `Streak.currentStreakDays` (Doc 04) previously had no defined milestone thresholds. Fixed: milestones are **7, 30, and 90 consecutive active days** (an "active day" being any day with at least one `COMPLETED` `ScheduledSession`). Each milestone triggers exactly one `STREAK_MILESTONE` XP award (above) and is also the trigger condition for the three streak badges listed in the new badge table below (M5). A streak that breaks and restarts re-earns each milestone from zero — milestones are not cumulative lifetime counts, they reset with `currentStreakDays`.
 
 > ✨ **NEW IN v3.2 — V1 Badge List, Defined (resolves M5)**
-> `Badge.criteriaDescription` (Doc 04) is free-text by design (no rating system to derive structured criteria from, per FC-01), but no prior draft actually enumerated which badges exist. V1 ships with the following seed list — enough to make the gamification feature demonstrably functional at launch, not an exhaustive final catalog (Admin can add more later via `PATCH /admin/badges`, Doc 06 `06-gamification-engagement-api.md`):
+> `Badge.criteriaDescription` (Doc 04) is free-text by design (no rating system to derive structured criteria from, per FC-01), but no prior draft actually enumerated which badges exist. V1 ships with the following seed list — enough to make the gamification feature demonstrably functional at launch, not an exhaustive final catalog (Admin can add more later via `POST /admin/badges` — **I2 fix**: corrected from the prior draft's `PATCH /admin/badges`, which edits an *existing* badge and cannot create one; see Doc 06 `06-gamification-engagement-api.md`):
 >
 > **Student badges (`category: STUDENT`):**
 > | Badge | Criteria |
@@ -765,6 +765,9 @@ Confirmed by client as final — no changes from v2.0/v3.0.
 | NFR-008 | Store passwords using a secure hashing algorithm; never store plain-text passwords. |
 | NFR-009 | Restrict access to student data and recordings strictly according to the roles and rules defined in Sections 5, 9, and 14. |
 | NFR-010 | Retain personal data only as long as necessary and in line with the platform's Privacy Policy. |
+| NFR-013 | Enforce server-side rate limiting (in-memory, per-process — see V1 scope note below) on abuse-prone endpoints, per-IP and/or per-account: login (5 attempts / 15 min per identifier+IP pair, generic error, no account-existence leak), resend-verification (3 / hour per account), forgot-password (3 / hour per account+IP), payment initiation — including promotion-code application, same endpoint (10 / hour per account), and sending a message (30 / minute per account). Exceeding a limit returns `429` with a generic "Too many requests, please try again later" message. **V1 scope note:** in-memory limiting resets on restart/redeploy and does not hold consistently across multiple app instances if the platform ever runs more than one — acceptable for V1's single-instance deployment; revisit with a shared store (e.g. Redis) if/when horizontal scaling is introduced. → Section 18.7 Item 1. |
+| NFR-014 | Authentication uses short-lived access tokens plus long-lived, rotating refresh tokens rather than re-login as the only renewal path. Access token TTL: 30 minutes. Refresh token TTL: 30 days, single-use with rotation (each use issues a new refresh token and invalidates the old one; reuse of an already-rotated token revokes the entire token family as a theft signal). Refresh tokens are stored hashed, never in plaintext. → Section 18.7 Item 2, Doc 04 `RefreshToken`. |
+| NFR-015 | All active refresh tokens for a `User` are revoked on password reset and on explicit logout-from-this-device (the presented refresh token only) or logout-from-all-devices (every token for that user). |
 
 ### 15.5 Scalability
 
@@ -813,9 +816,9 @@ The full platform experience, from a student's point of view, in a single flow:
 
 ---
 
-## 18 Resolution Record — v2.0 to v3.2
+## 18 Resolution Record — v2.0 to v3.3
 
-All items open at the end of v2.0 were resolved in v3.0, the six hand-off gaps identified while preparing v3.0 for Technical Specification drafting are resolved below in Section 18.5, and the seven mechanics gaps surfaced while cross-referencing Docs 04/06/08 are resolved in Section 18.6. **No items remain open.**
+All items open at the end of v2.0 were resolved in v3.0, the six hand-off gaps identified while preparing v3.0 for Technical Specification drafting are resolved below in Section 18.5, the seven mechanics gaps surfaced while cross-referencing Docs 04/06/08 are resolved in Section 18.6, and the two pre-implementation hardening items surfaced by the Docs 01–09 checklist audit are resolved in Section 18.7. **No items remain open.**
 
 ### 18.1 Former Section 18 Items — Both Closed (v3.0)
 
@@ -890,14 +893,23 @@ Three minor items were also resolved in this range: a wording clarification on F
 | 6 | V1 badge seed list (M5) | Enumerated the initial student and tutor badge catalog (7 student badges, 4 tutor badges) shipped at launch. → Section 10. |
 | 7 | Monetary rounding rule (M7) | Every calculated (not Admin-set) monetary amount — refund proration, the 50% reduced make-up rate — rounds to 2 decimal places, standard round-half-up, at calculation time. → Section 13. |
 
-> ✅ **RESOLVED — v3.2 — Overall Status**
-> Every item raised across the v2.0 client review, the five v3.0 consistency-audit rounds, the v3.1 technical hand-off review, and the v3.2 Docs 04/06/08 cross-reference review is now resolved and reflected in the numbered sections above. **Zero items remain open.** This document is ready to serve as the basis for the Technical/System Specification.
+### 18.7 Round 8 — Pre-Implementation Hardening (v3.3, 2 Items)
+
+> ℹ️ Surfaced by the Pre-Implementation Checklist audit of Docs 01–09 (September 2026), not a client-facing scope change — both items harden the auth/security mechanics that Docs 04/06/08 already assumed but left partially undefined.
+
+| # | Topic | Resolution |
+|---|---|---|
+| 1 | Server-side rate limiting undefined | In-memory `express-rate-limit`, per-endpoint thresholds fixed for login, resend-verification, forgot-password, payment initiation (covers promotion-code application — same endpoint), and sending a message. → Section 15.4 (NFR-013), Doc 06 `00-api-conventions.md` §0.8, Doc 08 `8-1-shared-config.md`. |
+| 2 | No refresh-token model | Access token (30 min) + rotating, single-use refresh token (30 days), stored hashed, with reuse-detection revoking the token family. Replaces re-login-only renewal. → Section 15.4 (NFR-014, NFR-015), Doc 04 `RefreshToken`, Doc 06 `01-shared-config-api.md`, Doc 08 `8-1-shared-config.md`. |
+
+> ✅ **RESOLVED — v3.3 — Overall Status**
+> Every item raised across the v2.0 client review, the five v3.0 consistency-audit rounds, the v3.1 technical hand-off review, the v3.2 Docs 04/06/08 cross-reference review, and the v3.3 pre-implementation hardening review is now resolved and reflected in the numbered sections above. **Zero items remain open.** This document is ready to serve as the basis for the Technical/System Specification.
 
 ---
 
 ## 19 Approval & Sign-off
 
-By signing below, the client confirms that this v3.2 Software Requirements Specification — the amended baseline, with no open items — accurately reflects the scope of work to be delivered, and authorizes the design and development team to proceed to Technical/System Specification on this basis.
+By signing below, the client confirms that this v3.3 Software Requirements Specification — the amended baseline, with no open items — accurately reflects the scope of work to be delivered, and authorizes the design and development team to proceed to Technical/System Specification on this basis.
 
 **Client / Project Owner**
 

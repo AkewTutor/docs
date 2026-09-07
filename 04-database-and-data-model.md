@@ -21,6 +21,7 @@ This becomes `prisma/schema.prisma` (or equivalent ORM schema) almost line for l
 - **The billing cycle is a fixed 28-day window, not a true calendar month.** This makes `totalSessionsBilled = sessionsPerWeek × 4` exact and deterministic for every Cohort, which a true month (28–31 days, non-integer week count) could not guarantee. User-facing copy says "monthly"; the schema and billing math use the fixed 28-day figure.
 - **No spatial/PostGIS concerns** — unlike the reference project, AKEWTutor has no map or grid component; nothing here needs geographic types.
 - **All monetary fields are `Decimal`, never `Float`.** Prices, revenue splits, refunds, and payouts are real ETB currency, not scientific/statistical values (the opposite emphasis from the reference project, where signal/score values were correctly `Float`) — `Decimal` avoids floating-point rounding error in money math.
+- **Primary keys are `String (UUID)` / `default uuid()`, not the template's `cuid()`.** This is a deliberate choice, not an oversight: Prisma supports `uuid()` natively, and UUIDs are the more broadly interoperable choice given the number of external integrations here (Chapa payments, Cloudflare R2, SMS/email providers) — the same reasoning that justifies departing from a template default elsewhere in this section (e.g. `Decimal` vs. `Float` above).
 - **Enums are used wherever a fixed, closed set exists** (roles, statuses, `TutoringFormat`, evidence-adjacent categories, etc.), so that Admin-configurable pricing (FR-PR-004) and matching logic always validate against a known, closed format set rather than free text.
 - **Grade levels are a plain integer field (1–12), not a separate entity.** Since FR-TU-006 confirms a tutor's ranked subjects apply across the *entire* Grade 1–12 span with no per-grade configuration, there is no `GradeLevel` table to join against — grade is just a bounded `Int` on `StudentProfile`, validated at the application layer.
 
@@ -40,6 +41,7 @@ This becomes `prisma/schema.prisma` (or equivalent ORM schema) almost line for l
 | Identity & Accounts | ParentProfile | A parent/guardian's account state (1:1 with User) |
 | Identity & Accounts | TutorProfile | A tutor's qualification profile and verification state (1:1 with User) |
 | Identity & Accounts | ParentStudentRelationship | The guardian-link between a Parent and a Student, with its own lifecycle |
+| Identity & Accounts | RefreshToken | A rotating, single-use refresh token backing a User's session (NFR-014/015) |
 | Catalog | Subject | One teachable subject (e.g., "Mathematics") |
 | Catalog | TutorSubjectRanking | A tutor's ranked subject (max 2 per tutor), join of TutorProfile ↔ Subject |
 | Availability | AvailabilitySlot | A block of time a tutor has marked available |
@@ -206,6 +208,29 @@ No grade-range field exists here or anywhere else on this entity, consistent wit
 **Traces to:** FR-AC-001, FR-AC-002, FR-AC-003, FR-AC-004, FR-AC-006, FR-AC-007, FR-AC-008. UC-04, UC-05, UC-07, UC-08, UC-09.
 
 `relationshipType = MANDATORY_GUARDIAN` is what the application layer checks before allowing revocation initiated by the student themselves (FR-AC-007 forbids it for this type) — `OPTIONAL_GUARDIAN` relationships may be revoked by either the guardian or the student who initiated them.
+
+---
+
+##### RefreshToken
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | String (UUID) | PK, default uuid() | |
+| userId | String | FK → User.id, required | |
+| tokenHash | String | unique, required | SHA-256 hash of the raw refresh token; the raw value is never persisted |
+| familyId | String (UUID) | required, default uuid() on first issuance | Shared by every token in one rotation chain; carried forward on each rotation, not regenerated |
+| expiresAt | DateTime | required | `createdAt` + 30 days (NFR-014) |
+| revokedAt | DateTime? | nullable | Set on rotation (superseded), explicit logout, password reset, or reuse-detected family revocation |
+| replacedByTokenId | String? | FK → RefreshToken.id, nullable | Set to the newly-issued token's id at rotation time; a populated value on an already-`revokedAt` token, presented again, is the reuse-detection trigger |
+| createdByIp | String? | nullable | Best-effort, for audit only — never used as a security boundary |
+| userAgent | String? | nullable | Best-effort, for audit only |
+| createdAt | DateTime | default now() | |
+
+**Relations:** `user` (many → one User), `replacedBy` (self-relation, many → one RefreshToken, nullable).
+
+**Traces to:** NFR-014, NFR-015. Doc 02 §18.7 Item 2.
+
+**Rotation & reuse detection:** issuing a new refresh token during `POST /auth/refresh` sets `revokedAt` and `replacedByTokenId` on the presented token in the same transaction as creating the new one, and the new token inherits `familyId`. If a token with `revokedAt` already set is presented again (the raw value being reused after rotation — a signal of token theft), every token sharing that `familyId` is immediately revoked and the caller must re-authenticate via `/auth/login`. Expired, unrevoked tokens are not actively purged by a job in V1 — they simply fail `expiresAt` validation at use time; a cleanup job is a candidate future optimization, not a correctness requirement.
 
 ---
 
@@ -653,20 +678,26 @@ Any `ScheduledSession` whose `scheduledStart` falls between an open `PaymentPaus
 | id | String (UUID) | PK, default uuid() | |
 | paymentId | String | FK → Payment.id, required | |
 | reason | Enum (RefundReason) | required | `TUTOR_DROPOUT \| PLATFORM_OUTAGE \| FORMAT_SWITCH \| SESSION_UNDELIVERED \| ADMIN_DISPUTE_RESOLUTION` |
+| status | Enum (RefundStatus) | required, default `PENDING` | `PENDING \| APPROVED \| REJECTED` — **I1 fix** |
 | sessionsRemaining | Int | required | Numerator of the proration formula |
 | totalSessionsBilled | Int | required | Denominator of the proration formula |
-| amount | Decimal | required | ETB — `(sessionsRemaining / totalSessionsBilled) × payment.amount` |
-| approvedById | String | FK → User.id, required | Admin |
-| approvedAt | DateTime | default now() | |
+| amount | Decimal | required | ETB — `(sessionsRemaining / totalSessionsBilled) × payment.amount`, computed and stored at creation time regardless of `status` |
+| approvedById | String? | FK → User.id, nullable — **I1 fix** | Admin who approved; null while `status = PENDING`, always null if `status = REJECTED` |
+| approvedAt | DateTime? | nullable — **I1 fix** | Set only on transition to `APPROVED` |
+| rejectedById | String? | FK → User.id, nullable — **I1 fix** | Admin who rejected; null unless `status = REJECTED` |
+| rejectedAt | DateTime? | nullable — **I1 fix** | Set only on transition to `REJECTED` |
+| rejectionReason | String? | nullable, max 500 chars — **I1 fix** | Admin's free-text reason, required by the API when rejecting (see `06-api/07-payments-earnings-api.md`) even though the column itself is nullable |
 | createdAt | DateTime | default now() | |
 
-**Relations:** `payment` (many → one Payment), `approvedBy` (many → one User), `formatSwitchRequest` (one → many `FormatSwitchRequest`, nullable back-reference).
+**Relations:** `payment` (many → one Payment), `approvedBy` (many → one User, nullable), `rejectedBy` (many → one User, nullable), `formatSwitchRequest` (one → many `FormatSwitchRequest`, nullable back-reference).
 
 **Traces to:** FR-AD-012, FR-PB-007, FR-SP-048, Section 03 (Refund Policy), Section 13 (Refund Proration Formula). UC-83, UC-61.
 
 `sessionsRemaining` and `totalSessionsBilled` are both stored explicitly (not just the resulting `amount`) so that every refund is independently auditable against the exact proration formula that produced it — a free make-up session under FR-MK-001 is never counted toward `sessionsRemaining`, since it doesn't consume an extra billed slot.
 
 **H4 fix — `ADMIN_DISPUTE_RESOLUTION` is not a free-amount escape hatch.** A refund issued from `PATCH /admin/disputes/:complaintId` (`resolutionAction: REFUND_ISSUED`) still goes through the exact same `(sessionsRemaining / totalSessionsBilled) × payment.amount` formula and still requires non-nullable `sessionsRemaining`/`totalSessionsBilled` — there is no code path that writes a `Refund` row with a bare admin-supplied amount. `ADMIN_DISPUTE_RESOLUTION` exists only so a dispute-triggered refund is distinguishable from the four session/schedule-driven reasons in reporting and audit, not to bypass the formula. See `06-api/08-support-trust-admin-api.md`'s dispute-resolution endpoint and `08-function-level-specification/backend/8-8-support-trust-admin.md` for exactly how the server derives `sessionsRemaining`/`totalSessionsBilled` from the disputed Cohort's current billing cycle instead of accepting them from the request body.
+
+**I1 fix — `Refund` now has an explicit `PENDING → APPROVED | REJECTED` lifecycle.** Prior to this fix, `approvedById`/`approvedAt` were non-nullable and there was no `status` field, which meant a `Refund` row could only ever exist already-approved — incompatible with `06-api/07-payments-earnings-api.md`'s `GET /admin/refunds?status=PENDING` queue, `08-function-level-specification/backend/8-7-payments-earnings.md`'s `approveRefund`, and the `07-frontend-specification/07-payments-earnings-frontend.md` `RefundCase.status` type, all of which already assumed a pending-then-approved (or rejected) flow. The `amount`/`sessionsRemaining`/`totalSessionsBilled` fields are still computed and persisted at *creation* time (when the refund-eligible case is first raised, e.g. by the dispute-resolution or tutor-dropout flow), not deferred to approval — this preserves the H4 guarantee above that the formula is never bypassed or backfilled after the fact. Only `status` (and the corresponding `approvedBy*`/`rejectedBy*` fields) change on the approve/reject transition; the money math never does.
 
 ---
 
@@ -844,17 +875,20 @@ No `rating`-derived criteria field exists anywhere on this entity — `criteriaD
 |---|---|---|---|
 | id | String (UUID) | PK, default uuid() | |
 | reporterId | String | FK → User.id, required | |
-| aboutUserId | String? | FK → User.id, nullable | |
-| aboutThreadId | String? | FK → MessageThread.id, nullable | |
-| aboutSessionId | String? | FK → ScheduledSession.id, nullable | |
-| category | Enum (ComplaintCategory) | required | `SAFETY \| PAYMENT \| RECORDING \| MATCHING \| OTHER` |
+| relatedCohortId | String? | FK → Cohort.id, nullable | |
+| relatedSessionId | String? | FK → ScheduledSession.id, nullable | |
+| relatedPaymentId | String? | FK → PaymentRecord.id, nullable | |
+| relatedThreadId | String? | FK → MessageThread.id, nullable | |
+| category | Enum (ComplaintCategory) | required | `SESSION_ISSUE \| TUTOR_CONDUCT \| PAYMENT_ISSUE \| MESSAGE_ISSUE \| OTHER` |
 | description | String | required | |
-| status | Enum (ComplaintStatus) | required, default `OPEN` | `OPEN \| IN_REVIEW \| RESOLVED \| DISMISSED` |
+| status | Enum (ComplaintStatus) | required, default `OPEN` | `OPEN \| UNDER_REVIEW \| RESOLVED \| DISMISSED` |
 | resolvedById | String? | FK → User.id, nullable | Admin |
 | resolvedAt | DateTime? | nullable | |
 | createdAt | DateTime | default now() | |
 
-**Relations:** `reporter` (many → one User), `aboutUser` (many → one User, nullable), `aboutThread` (many → one MessageThread, nullable), `aboutSession` (many → one ScheduledSession, nullable), `resolvedBy` (many → one User, nullable).
+**Relations:** `reporter` (many → one User), `relatedCohort` (many → one Cohort, nullable), `relatedSession` (many → one ScheduledSession, nullable), `relatedPayment` (many → one PaymentRecord, nullable), `relatedThread` (many → one MessageThread, nullable), `resolvedBy` (many → one User, nullable).
+
+**Tutor resolution:** ComplaintReport has no direct tutor FK. For `TUTOR_CONDUCT` complaints (and for computing `complaintCount` in the tutor-performance report), the tutor is derived at query time: `relatedCohortId → Cohort.tutorId`, falling back to `relatedSessionId → ScheduledSession → Cohort.tutorId` when only a session is linked. A `TUTOR_CONDUCT` complaint must therefore be filed with `relatedCohortId` and/or `relatedSessionId` set — enforced alongside the existing "at least one related entity unless OTHER" rule in 06-api/08-support-trust-admin-api.md §8.2 `POST /complaints`.
 
 **Traces to:** FR-SP-042, FR-TU-022, FR-SC-003, FR-AD-017, FR-MS-004. UC-66, UC-87, UC-60.
 
@@ -958,7 +992,7 @@ This is the platform-wide canonical list — no endpoint, job, or service should
 
 ### 4.3 ER Diagrams
 
-Given the scale of this domain (39 entities across 10 sub-domains, vs. the reference project's 9), a single combined diagram would be unreadable. The relationships are instead split into four diagrams along the same domain groupings used in Section 4.2 — every foreign key above appears in exactly one of the four.
+Given the scale of this domain (40 entities across 10 sub-domains, vs. the reference project's 9), a single combined diagram would be unreadable. The relationships are instead split into four diagrams along the same domain groupings used in Section 4.2 — every foreign key above appears in exactly one of the four.
 
 #### 4.3.1 Identity, Guardianship & Tutor Setup
 
@@ -1272,6 +1306,10 @@ erDiagram
 | Item | Detail |
 |---|---|
 | User(email), User(phone) | Unique, nullable-safe — at least one of the two must be set, enforced at the application layer since standard SQL unique constraints don't distinguish "both null" from a duplicate |
+| RefreshToken(tokenHash) | Unique — lookup is always by hash of the presented raw token, never by id |
+| RefreshToken(userId, revokedAt) | Index — supports logout-from-all-devices (revoke every non-revoked token for a user) |
+| RefreshToken(familyId) | Index — supports reuse-detection's family-wide revocation |
+| No cascade delete: User → RefreshToken | `onDelete: Cascade` (the only cascade exception in this table) — refresh tokens are pure session artifacts with no standalone audit value once their User is gone |
 | ParentStudentRelationship(parentId, studentId) | Unique composite — one relationship record per pair |
 | TutorSubjectRanking(tutorId, rank) and (tutorId, subjectId) | Unique composites — enforce one primary + one secondary, no duplicate subject |
 | PricingConfig(format) where isActive=true | Partial unique, application-enforced — only one active config per format |

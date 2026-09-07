@@ -3,6 +3,9 @@
 
 **Depends on:** Matching & Cohorts (hard — a `MessageThread` is 1:1 with a `Cohort`).
 
+**Links back to:** [07-frontend-specification/05-messaging-frontend.md], [05b. Frontend Folder & File Structure §5]
+**Links forward to:** [9-5. Frontend Test Spec: In-Platform Messaging]
+
 ---
 
 ### Shared Pattern: Simple Query Hook

@@ -3,6 +3,9 @@
 
 **Owns:** MessageThread, Message. **Depends on:** `matching-cohorts` (hard) — a `MessageThread` is 1:1 with a `Cohort`.
 
+**Links back to:** [06-api/05-messaging-api.md], [05a. Backend Folder & File Structure §5]
+**Links forward to:** [9-5. Backend Test Spec: In-Platform Messaging]
+
 ---
 
 ### src/schemas/messaging.schema.ts (new)
@@ -58,7 +61,7 @@ Test file: `tests/services/messaging.service.test.ts` — includes the closed-th
 |---|---|---|---|
 | GET | /cohorts/:cohortId/thread | `authMiddleware` | getThread |
 | GET | /cohorts/:cohortId/messages | `authMiddleware` | listMessages |
-| POST | /cohorts/:cohortId/messages | `authMiddleware, validate(sendMessageSchema)` | sendMessage |
+| POST | /cohorts/:cohortId/messages | `authMiddleware, rateLimiter(SEND_MESSAGE_LIMIT), validate(sendMessageSchema)` | sendMessage |
 
 Mounted at `/messaging`.
 

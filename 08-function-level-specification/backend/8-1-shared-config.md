@@ -3,13 +3,16 @@
 
 Covers every backend file not owned by a single feature — Prisma schema/seed, cross-cutting middleware and utils, job scheduler registration — plus shared-config's own owned files (auth, notifications, policies, admin announcements). Shared-config is the foundation feature (Feature Decomposition §1.1's "no dependency of any kind"), which is why the cross-cutting infra is documented here rather than in its own separate file.
 
+**Links back to:** [06-api/01-shared-config-api.md], [05a. Backend Folder & File Structure §1]
+**Links forward to:** [9-1. Backend Test Spec: Shared Config]
+
 ---
 
 ## Section 0 — Cross-Cutting Foundations
 
 ### prisma/schema.prisma (new)
 
-All 39 entities and every enum from Doc 04, in full — not restated field-by-field here (Doc 04 is the source of truth for column types/constraints). Two decisions worth flagging explicitly since they're easy to get wrong during implementation:
+All 40 entities and every enum from Doc 04, in full — not restated field-by-field here (Doc 04 is the source of truth for column types/constraints). Two decisions worth flagging explicitly since they're easy to get wrong during implementation:
 
 - **`role` on `User`** is `UserRole { STUDENT, PARENT, TUTOR, ADMIN }` — a single base `User` table plus one optional 1:1 profile table per role (`StudentProfile`, `ParentProfile`, `TutorProfile`); Admin has no profile table (Doc 04 §"One base User table" note).
 - **Money fields** (`pricePerStudentPerHour`, `amount`, etc.) are `Decimal`, never `Float`, matching `00-api-conventions.md` §0.6.
@@ -26,7 +29,7 @@ All 39 entities and every enum from Doc 04, in full — not restated field-by-fi
 
 Test file: not required — seed scripts are excluded from the mirrored-test-file rule (Doc 05a §0 standing rule applies to services, not seed scripts).
 
-### src/middleware/auth.middleware.ts (new)
+### src/middlewares/auth.middleware.ts (new)
 
 | Field | Detail |
 |---|---|
@@ -41,17 +44,17 @@ Test file: not required — seed scripts are excluded from the mirrored-test-fil
 
 Test file: `tests/utils/auth.middleware.test.ts` — covers missing/expired/malformed token, and a role mismatch.
 
-### src/middleware/errorHandler.middleware.ts (new)
+### src/middlewares/error.middleware.ts (new)
 
 | Field | Detail |
 |---|---|
-| Function | `errorHandlerMiddleware(err, req, res, next)` |
+| Function | `errorMiddleware(err, req, res, next)` |
 | Purpose | Centralized error → HTTP response mapping. Any `ApiError` (statusCode, message, errors[]) is serialized directly into the standard error envelope (`00-api-conventions.md` §0.1). Any unrecognized/unexpected error is caught, logged server-side, and returned as a generic `500` — the raw error/stack is never leaked to the client. |
 | Edge cases | A Zod validation failure thrown by `validate.middleware.ts` is mapped to `400` with `errors` populated field-by-field, per §0.1/§0.2. |
 
-Test file: `tests/utils/errorHandler.middleware.test.ts`
+Test file: `tests/utils/error.middleware.test.ts`
 
-### src/middleware/validate.middleware.ts (new)
+### src/middlewares/validate.middleware.ts (new)
 
 | Field | Detail |
 |---|---|
@@ -60,14 +63,44 @@ Test file: `tests/utils/errorHandler.middleware.test.ts`
 
 Test file: `tests/utils/validate.middleware.test.ts`
 
+### src/middlewares/rateLimiter.middleware.ts (new)
+
+| Field | Detail |
+|---|---|
+| Function | `rateLimiter(config: RateLimitConfig)` |
+| Purpose | Higher-order middleware built on `express-rate-limit`'s default in-memory store — per-process counters, no external store dependency. Config per call site: `windowMs`, `max`, and a `keyGenerator` (e.g. `identifier+ip` for login, `req.user.id` for authenticated endpoints). |
+| Throws | `ApiError(429, "Too many requests, please try again later")` once `max` is exceeded within `windowMs`, via a custom `handler` so the response matches the standard error envelope rather than `express-rate-limit`'s default plain-text body. |
+| Applied to | `POST /auth/login`, `POST /auth/resend-verification`, `POST /auth/forgot-password` (this file); `POST /payments/initiate` (`8-7-payments-earnings.md`); `POST /messaging/cohorts/:cohortId/messages` (`8-5-messaging.md`) — per Doc 02 NFR-013, thresholds in `src/config/rateLimits.ts`. |
+| Edge cases | Counters reset on process restart/redeploy, and do not stay in sync across multiple app instances if the platform ever runs more than one — an accepted V1 tradeoff for a single-instance deployment (Doc 02 NFR-013's scope note); revisit with a shared store if horizontal scaling is introduced. |
+
+Test file: `tests/middlewares/rateLimiter.middleware.test.ts` — covers under-limit pass-through, over-limit `429`, and distinct keys not interfering with each other.
+
+### src/config/rateLimits.ts (new)
+
+| Field | Detail |
+|---|---|
+| Purpose | Named threshold constants consumed by `rateLimiter.middleware.ts` call sites, so Admin/Ops can retune a limit without touching route code. |
+| Exports | `LOGIN_LIMIT` (5 / 15 min), `RESEND_VERIFICATION_LIMIT` (3 / hour), `FORGOT_PASSWORD_LIMIT` (3 / hour), `PAYMENT_INITIATE_LIMIT` (10 / hour), `SEND_MESSAGE_LIMIT` (30 / minute) — values match `00-api-conventions.md` §0.8. |
+
+Test file: not required — a plain constants file, no branching logic.
+
 ### src/utils/jwt.ts (new)
 
 | Function | Detail |
 |---|---|
-| `signAccessToken(payload: { id, role })` | Signs a JWT using `JWT_SECRET`; expiry per the base template's standard (a fixed short-to-medium lived access token — no refresh-token model exists in Doc 04, so re-login is the only renewal path). |
+| `signAccessToken(payload: { id, role })` | Signs a JWT using `JWT_SECRET`, expiry from `env.JWT_EXPIRES_IN` (default `'30m'`, per NFR-014 — see Doc 05a §9) rather than a hardcoded literal, keeping the template's env-driven `jwt.ts` pattern (§5.1) intact. A deployment can override the TTL via `.env` without a code change, but the shipped default satisfies NFR-014 out of the box. |
 | `verifyAccessToken(token: string)` | Verifies signature + expiry; throws on any failure (caught by `authMiddleware`, not re-caught here). |
 
 Test file: `tests/utils/jwt.test.ts`
+
+### src/utils/refreshToken.ts (new)
+
+| Function | Detail |
+|---|---|
+| `generateRefreshToken()` | Returns a cryptographically random opaque string (`crypto.randomBytes(40).toString('hex')`) — deliberately not a JWT, since the DB lookup needed for revocation/rotation makes a self-contained signed token pointless overhead here. |
+| `hashRefreshToken(raw: string)` | SHA-256 hash of the raw token, for `RefreshToken.tokenHash` — the raw value is only ever returned to the client once, at issuance, and never persisted. |
+
+Test file: `tests/utils/refreshToken.test.ts` — covers uniqueness across repeated calls and that the hash is deterministic for a given raw input.
 
 ### src/utils/password.ts (new)
 
@@ -78,9 +111,9 @@ Test file: `tests/utils/jwt.test.ts`
 
 Test file: `tests/utils/password.test.ts`
 
-### src/utils/prisma.ts (new)
+### src/config/db.ts (new — moved from src/utils/prisma.ts, template §5.2)
 
-Single shared `PrismaClient` instance, imported everywhere a service needs DB access — never instantiated per-request. No function-level detail beyond the singleton export.
+Prisma 7 driver-adapter singleton, following the template's pattern exactly: a `pg` `Pool` (built from `env.DATABASE_URL`) wrapped in `@prisma/adapter-pg`'s `PrismaPg`, passed to `PrismaClient({ adapter, log })`. Cached on `globalThis` outside production to survive `tsx` hot reloads without exhausting the connection pool. This lives in `src/config/` rather than `src/utils/` because Prisma 7 requires the adapter (the template's `schema.prisma` has no `url` in its `datasource` block — the driver adapter is how the connection is actually made, not an optional wrapper), and the template's own folder-responsibility table defines `src/config/` as "external connections — DB and validated env vars." No function-level detail beyond the singleton export.
 
 ### src/utils/pagination.ts (new)
 
@@ -112,6 +145,7 @@ Test file: `tests/utils/pagination.test.ts`
 | registerParentSchema | Same base shape minus `grade`. |
 | registerTutorSchema | Same base shape minus `grade`. |
 | loginSchema | `z.object({ body: z.object({ identifier: z.string().min(1), password: z.string().min(1) }) })` |
+| refreshSchema | `z.object({ body: z.object({ refreshToken: z.string().min(1) }) })` |
 | passwordResetRequestSchema | `z.object({ body: z.object({ identifier: z.string().min(1) }) })` |
 | passwordResetSchema | `z.object({ body: z.object({ userId: z.string().uuid(), code: z.string().min(1), newPassword: z.string().min(8) }) })` |
 | verifyContactSchema | `z.object({ body: z.object({ userId: z.string().uuid(), code: z.string().min(1) }) })` |
@@ -138,23 +172,45 @@ Test file: `tests/services/auth.service.test.ts` — includes duplicate-email/ph
 
 | Field | Detail |
 |---|---|
-| Signature | `login(identifier: string, password: string): Promise<{ accessToken: string; user: AuthUserDTO }>` |
-| Purpose | Authenticate any role by email or phone. |
+| Signature | `login(identifier: string, password: string): Promise<{ accessToken: string; refreshToken: string; user: AuthUserDTO }>` |
+| Purpose | Authenticate any role by email or phone; issue a token pair. |
 | Throws | `ApiError(401, "Invalid email/phone or password")` — identifier not found, or password mismatch; identical message and status either way, never revealing which field was wrong (API spec §1.2). |
-| Side effects | `bcrypt.compare` via `password.ts`; on success, `jwt.ts` → `signAccessToken({ id, role })`. |
+| Side effects | `bcrypt.compare` via `password.ts`; on success, `jwt.ts` → `signAccessToken({ id, role })`, plus `refreshToken.ts` → `generateRefreshToken()` and a `prisma.refreshToken.create` (new `familyId`, `hashRefreshToken(raw)` stored, raw returned to the caller once). Rate limited — see `rateLimiter.middleware.ts`. |
 | Edge cases | As with the Shadow Economy reference pattern, `bcrypt.compare` should still execute (against a dummy hash) even when `identifier` isn't found, so response timing doesn't leak account existence — called out explicitly as a hardening detail to implement, not to skip as an optimization. |
 
-Test file: `tests/services/auth.service.test.ts` — explicitly covers "identifier not found" and "wrong password" returning the identical message and comparable timing behavior.
+Test file: `tests/services/auth.service.test.ts` — explicitly covers "identifier not found" and "wrong password" returning the identical message and comparable timing behavior, plus a successful login returning both tokens.
+
+#### refreshAccessToken
+
+| Field | Detail |
+|---|---|
+| Signature | `refreshAccessToken(rawRefreshToken: string): Promise<{ accessToken: string; refreshToken: string }>` |
+| Purpose | Exchange a valid, unexpired, unrevoked refresh token for a new token pair (NFR-014), without requiring re-login. |
+| Throws | `ApiError(401, "Session expired — please log in again")` — token not found, expired, or already revoked (including the reuse-detected case below); identical message in every case, never signaling which. |
+| Side effects | Looks up `prisma.refreshToken.findUnique({ tokenHash: hashRefreshToken(raw) })`. If found, not expired, and `revokedAt` is null: in one transaction, revoke the presented token (`revokedAt = now()`), create a new `RefreshToken` with the same `familyId` and set the presented token's `replacedByTokenId` to the new row's id, and sign a new access token. If found but `revokedAt` is already set (the raw value is a previously-rotated, now-reused token — theft signal): revoke every `RefreshToken` row sharing that `familyId`, then throw the same 401 as the not-found case. |
+| Edge cases | Reuse detection intentionally reports the identical error and status as a plain expired/not-found token — the whole point is that a legitimate user who lost a race with token rotation (e.g. a retried request) and an attacker replaying a stolen token both just get told to log in again, with nothing client-visible distinguishing the two. |
+
+Test file: `tests/services/auth.service.test.ts` — covers valid rotation, expired token, not-found token, and reuse-detected token revoking the full family (verify sibling tokens are also `revokedAt` afterward).
 
 #### logout
 
 | Field | Detail |
 |---|---|
-| Signature | `logout(): Promise<void>` |
-| Purpose | End the current session. |
-| Side effects | None — auth is stateless JWT with no session table in Doc 04's schema; logout is effectively "the client discards the token." This is a deliberate, honest V1 no-op (not an oversight) — matching the same design tension called out in the Admin Access reference pattern for single-token systems. |
+| Signature | `logout(rawRefreshToken: string): Promise<void>` |
+| Purpose | End the current session on this device. |
+| Side effects | `prisma.refreshToken.updateMany({ where: { tokenHash: hashRefreshToken(raw), revokedAt: null }, data: { revokedAt: now() } })` — silently succeeds even if the token was already revoked/expired/not found, since the end state (no valid token) is the same either way. The access token itself is not server-side revocable (stateless JWT) and simply expires naturally within 30 minutes — a deliberate, documented V1 tradeoff (NFR-014), not an oversight. |
 
-Test file: `tests/services/auth.service.test.ts`
+Test file: `tests/services/auth.service.test.ts` — covers revoking a valid token and the already-revoked/not-found no-op case.
+
+#### logoutAll
+
+| Field | Detail |
+|---|---|
+| Signature | `logoutAll(userId: string): Promise<void>` |
+| Purpose | End every session across all of the caller's devices (NFR-015) — e.g. after a suspected compromised device. |
+| Side effects | `prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now() } })`. Already-issued access tokens on other devices remain valid until their own natural 30-minute expiry (same stateless-JWT tradeoff as `logout`). |
+
+Test file: `tests/services/auth.service.test.ts` — covers revoking multiple tokens for one user and not touching another user's tokens.
 
 #### requestPasswordReset
 
@@ -163,7 +219,7 @@ Test file: `tests/services/auth.service.test.ts`
 | Signature | `requestPasswordReset(identifier: string): Promise<void>` |
 | Purpose | Sends a reset code to the verified contact method. |
 | Throws | Never — always resolves successfully regardless of whether `identifier` matches an account (API spec §1.2's deliberate non-disclosure). |
-| Side effects | If a matching `User` exists, generates a reset code and dispatches via `notification.service.ts`; if not, does nothing but still returns the same success shape. |
+| Side effects | If a matching `User` exists, generates a reset code and dispatches via `notification.service.ts`; if not, does nothing but still returns the same success shape. Rate limited at the route level (`rateLimiter.middleware.ts`, NFR-013). |
 | Edge cases | This function must not let a downstream error (e.g. SMS provider failure) leak a different response shape than the no-match case — both paths converge on the identical `200` response at the controller. |
 
 Test file: `tests/services/auth.service.test.ts` — covers both matching and non-matching identifiers producing identical outward behavior.
@@ -174,7 +230,7 @@ Test file: `tests/services/auth.service.test.ts` — covers both matching and no
 |---|---|
 | Signature | `resetPassword(userId: string, code: string, newPassword: string): Promise<void>` |
 | Throws | `ApiError(400, "This reset link is no longer valid — request a new one")` — code expired or already used. |
-| Side effects | Hashes `newPassword`, updates `User.passwordHash`, invalidates the reset code (single-use). |
+| Side effects | Hashes `newPassword`, updates `User.passwordHash`, invalidates the reset code (single-use), and calls `logoutAll(userId)` (NFR-015) — a password reset invalidates every existing session. |
 
 Test file: `tests/services/auth.service.test.ts`
 
@@ -184,7 +240,7 @@ Test file: `tests/services/auth.service.test.ts`
 |---|---|
 | Signature | `verifyContact(userId: string, code: string): Promise<{ emailVerifiedAt, phoneVerifiedAt }>` · `resendVerification(userId: string): Promise<void>` |
 | Throws | (verify) `ApiError(400, "Invalid or expired code — request a new one")`. |
-| Side effects | (verify) Sets `emailVerifiedAt`/`phoneVerifiedAt` depending on which contact method the code was issued for. (resend) Regenerates and redispatches a code without penalizing the original registration attempt — no rate limit is enforced server-side on this endpoint per the API spec, so any throttling is a client-side courtesy only. |
+| Side effects | (verify) Sets `emailVerifiedAt`/`phoneVerifiedAt` depending on which contact method the code was issued for. (resend) Regenerates and redispatches a code without penalizing the original registration attempt; rate limited server-side at the route level (`rateLimiter.middleware.ts`, NFR-013) — no longer a client-side-only courtesy. |
 
 Test file: `tests/services/auth.service.test.ts`
 
@@ -194,7 +250,9 @@ Test file: `tests/services/auth.service.test.ts`
 |---|---|---|
 | register | `authService.registerUser(role, req.body)` — `role` fixed per route (`/register/student`, `/register/parent`, `/register/tutor`) | 201 |
 | login | `authService.login(req.body.identifier, req.body.password)` | 200 |
-| logout | `authService.logout()` | 200, `{}` |
+| refresh | `authService.refreshAccessToken(req.body.refreshToken)` | 200 |
+| logout | `authService.logout(req.body.refreshToken)` | 200, `{}` |
+| logoutAll | `authService.logoutAll(req.user.id)` | 200, `{}` |
 | verify | `authService.verifyContact` or `authService.resendVerification`, branched by route | 200 |
 | forgotPassword | `authService.requestPasswordReset(req.body.identifier)` | 200, `{}` always |
 | resetPassword | `authService.resetPassword(req.body.userId, req.body.code, req.body.newPassword)` | 200, `{}` |
@@ -206,14 +264,16 @@ Test file: `tests/services/auth.service.test.ts`
 | POST | /register/student | `validate(registerStudentSchema)` | register |
 | POST | /register/parent | `validate(registerParentSchema)` | register |
 | POST | /register/tutor | `validate(registerTutorSchema)` | register |
-| POST | /login | `validate(loginSchema)` | login |
+| POST | /login | `rateLimiter(LOGIN_LIMIT)`, `validate(loginSchema)` | login |
+| POST | /refresh | `validate(refreshSchema)` | refresh |
 | POST | /logout | `authMiddleware` | logout |
+| POST | /logout-all | `authMiddleware` | logoutAll |
 | POST | /verify-contact | `validate(verifyContactSchema)` | verify |
-| POST | /resend-verification | — | verify |
-| POST | /forgot-password | `validate(passwordResetRequestSchema)` | forgotPassword |
+| POST | /resend-verification | `rateLimiter(RESEND_VERIFICATION_LIMIT)` | verify |
+| POST | /forgot-password | `rateLimiter(FORGOT_PASSWORD_LIMIT)`, `validate(passwordResetRequestSchema)` | forgotPassword |
 | POST | /reset-password | `validate(passwordResetSchema)` | resetPassword |
 
-All public except `logout`. Mounted at `/auth`.
+All public except `logout`/`logout-all`. Mounted at `/auth`.
 
 ---
 

@@ -4,6 +4,9 @@
 
 **Owns:** StudentProfile, ParentProfile, TutorProfile, ParentStudentRelationship, Subject, TutorSubjectRanking, AvailabilitySlot. **Depends on:** Shared Config (hard, per Feature Decomposition §1.1).
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §2], [Feature Decomposition §1]
+**Links forward to:** [8-2. Backend Function-Level Spec: Accounts & Guardianship]
+
 ---
 
 ### 2.1 Endpoint Table
@@ -585,6 +588,8 @@ Each ranked subject applies across the full Grade 1–12 span — no grade-range
 #### DELETE /tutors/me/availability/:slotId
 
 **Purpose:** Remove an availability slot (UC-19). Blocked if a confirmed `ScheduledSession` depends on it.
+
+> **Fix (audit) — deliberate asymmetry, not a leftover from an earlier draft:** this is the only `DELETE` in the entire API; every other removal elsewhere (subjects, guardian relationships, promotions) is a `PATCH .../deactivate`-style status flip instead, because those entities have downstream history worth preserving (an ended relationship, a deactivated subject still referenced by past cohorts). An `AvailabilitySlot` has no such downstream state once removed — nothing else FKs to it once the "in use by a confirmed session" check above passes — so a hard delete is correct here and should **not** be "fixed" into a `PATCH .../deactivate` pattern for false consistency with the rest of the API.
 
 **Auth:** Tutor — must own the slot
 

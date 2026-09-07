@@ -127,6 +127,14 @@ FRs: FR-SP-001–005, FR-TU-001–002, FR-AC-002, FR-AC-005. **OWASP: A07:2021, 
 | Success calls `authStore.setAuth` with response data | mock `POST /auth/login` → `{ accessToken, user }` | `mutate({ identifier, password })` | `authStore.setAuth` called with exactly those two values, nothing else |
 | Identical-shape error for wrong password vs. unknown identifier | mock a `401` with the backend's single generic message for both cases | `mutate` with each variant | the hook surfaces the **same** error object/message in both cases — a test asserting these are literally identical (not just "both are some 401") catches a future regression where the frontend accidentally branches on identifier-not-found vs wrong-password and leaks which one it was (this would defeat the backend's own timing/response-shape hardening documented in the backend's `9-1-shared-config.md` §9.18) |
 
+#### useLogout
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Success clears local session via `onSettled` | mock `POST /auth/logout` → success | `mutate()` | `authStore.logout()` is called, clearing `token`/`user` to `null` |
+| A failed API call still clears local session | mock `POST /auth/logout` to reject (e.g. an already-expired token, network error) | `mutate()` | `authStore.logout()` is still called — confirms the hook uses `onSettled`, not `onSuccess`, so the person is never stuck unable to log out client-side because of a network error (8-1's explicit design intent) |
+| Clears session before/without an imperative `navigate()` call | mock success | `mutate()` | no `navigate()` call is asserted from within the hook itself — the redirect to `/login` is left to `ProtectedRoute`'s next render reacting to `token` becoming `null`, not a side effect the hook performs directly |
+
 #### useRegister(mode)
 
 | Case | Setup | Action | Expected result |

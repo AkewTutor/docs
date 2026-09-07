@@ -3,6 +3,9 @@
 
 **Depends on:** Accounts & Guardianship (hard); soft-integrates with Class Delivery & Library (XP-award trigger, entirely server-side — no client-facing coupling at all, per frontend spec header).
 
+**Links back to:** [07-frontend-specification/06-gamification-engagement-frontend.md], [05b. Frontend Folder & File Structure §6]
+**Links forward to:** [9-6. Frontend Test Spec: Gamification & Engagement]
+
 ---
 
 ### Shared Pattern: Simple Query Hook
@@ -21,7 +24,14 @@
 | Hook | Endpoint | Invalidates |
 |---|---|---|
 | useAdjustBadge (admin) | PATCH /admin/badges/:id | [ADMIN_BADGES] |
+| useCreateBadge (admin) | POST /admin/badges | [ADMIN_BADGES] — **I2 fix** |
 | useCreateChallenge (admin) | POST /admin/challenges | [CHALLENGES] |
+
+### Shared Pattern: Simple Mutation, No Invalidation — **I2 fix**
+
+| Hook | Endpoint | Notes |
+|---|---|---|
+| useAdjustStudentXP (admin) | POST /admin/students/:studentId/xp-adjustments | No query key to invalidate on the admin surface itself (see frontend spec §6.5's rationale) |
 
 No hook in this feature needs a full block beyond these tables — every one is a plain read or a plain write-then-invalidate, per frontend spec §6.8's note that the leaderboard (and by extension the rest of this feature's data) is a non-optimistic read with no client-side prediction logic anywhere.
 
@@ -101,7 +111,7 @@ No hook in this feature needs a full block beyond these tables — every one is 
 | Field | Detail |
 |---|---|
 | Route | `/admin/badges` — `ProtectedRoute(['ADMIN'])` + `DashboardLayout(AdminSidebar)` |
-| Behavior | 1. `useAllBadges(category, page)`, filterable by `STUDENT`/`TUTOR` category. 2. Each row's edit action opens an inline form (`criteriaDescription`, `isActive` toggle) wired to `useAdjustBadge`. |
+| Behavior | 1. `useAllBadges(category, page)`, filterable by `STUDENT`/`TUTOR` category. 2. Each row's edit action opens an inline form (`criteriaDescription`, `isActive` toggle) wired to `useAdjustBadge`. 3. A "Create badge" action opens `BadgeForm` (`name`/`description`/`category`/`criteriaDescription`) wired to `useCreateBadge` — **I2 fix**. 4. A separate "Adjust student XP" panel renders `XPAdjustmentForm` (`studentId`/`amount`/`note`) wired to `useAdjustStudentXP` — **I2 fix**: this is UC-88's leaderboard-correction capability; it lives here because this is the only existing Admin-gamification surface, not because it's conceptually a badge action. |
 
 **States:** loading · success
 

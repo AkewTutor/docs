@@ -4,6 +4,9 @@
 
 **Owns:** MessageThread, Message. **Depends on:** Matching & Cohorts (hard, per Feature Decomposition §1.1) — a `MessageThread` is 1:1 with a `Cohort`.
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §5], [Feature Decomposition §1]
+**Links forward to:** [8-5. Backend Function-Level Spec: In-Platform Messaging]
+
 ---
 
 ### 5.1 Endpoint Table
@@ -106,6 +109,8 @@ A thread archived 90 days after the cohort ended (FR-MS-003) still returns its h
 
 **Auth:** Student|Parent|Tutor — caller must be a currently active member/tutor; blocked otherwise (FR-MS-002).
 
+**Rate limited:** 30 / minute, keyed by account — see `00-api-conventions.md` §0.8.
+
 **Path params:** `cohortId` — Cohort UUID
 
 **Request body:**
@@ -136,6 +141,7 @@ Sending a message writes a `Notification` (`type: NEW_MESSAGE`) to every other a
 |---|---|---|
 | 403 | Cohort not yet confirmed/paid, or caller no longer an active member | "Messaging is not available for this cohort" |
 | 403 | Thread `status: CLOSED_BY_ADMIN` | "This conversation has been closed" |
+| 429 | Rate limit exceeded | "Too many requests, please try again later" |
 
 **Implemented in:** `src/controllers/messaging.controller.ts → sendMessage` · `src/services/messaging.service.ts → sendMessage` · `src/schemas/messaging.schema.ts → sendMessageSchema`
 

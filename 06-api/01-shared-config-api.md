@@ -4,6 +4,9 @@
 
 **Owns:** User, Notification, PolicyDocument. **Depends on:** nothing (foundation feature, per Feature Decomposition §1.1).
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §1], [Feature Decomposition §1]
+**Links forward to:** [8-1. Backend Function-Level Spec: Shared Config]
+
 ---
 
 ### 1.1 Endpoint Table
@@ -14,7 +17,9 @@
 | POST | /auth/register/parent | Public | UC-03 | FR-SP-002, FR-SP-004, FR-SP-005, FR-AC-001, FR-AC-002 |
 | POST | /auth/register/tutor | Public | UC-15 | FR-TU-001, FR-TU-002 |
 | POST | /auth/login | Public | UC-10 | FR-SP-003 |
-| POST | /auth/logout | Authenticated | UC-10 | FR-SP-003 |
+| POST | /auth/refresh | Public | UC-10 | NFR-014 |
+| POST | /auth/logout | Authenticated | UC-10 | FR-SP-003, NFR-015 |
+| POST | /auth/logout-all | Authenticated | UC-10 | NFR-015 |
 | POST | /auth/verify-contact | Public | UC-11 | FR-SP-004 |
 | POST | /auth/resend-verification | Public | UC-11 | FR-SP-004 |
 | POST | /auth/forgot-password | Public | UC-10 | FR-SP-003 |
@@ -162,6 +167,8 @@
 
 **Auth:** Public
 
+**Rate limited:** 5 attempts / 15 min, keyed by `identifier` + IP — see `00-api-conventions.md` §0.8.
+
 **Request body:**
 ```json
 {
@@ -178,6 +185,7 @@
   "message": "OK",
   "data": {
     "accessToken": "jwt-string",
+    "refreshToken": "opaque-string",
     "user": {
       "id": "uuid",
       "role": "STUDENT",
@@ -187,19 +195,88 @@
   }
 }
 ```
+`accessToken` expires in 30 minutes (NFR-014). `refreshToken` is a single-use, 30-day-lived opaque string — the client stores it and exchanges it via `POST /auth/refresh` once the access token expires, rather than forcing re-login.
 
 **Error responses:**
 | Status | Condition | Message |
 |---|---|---|
 | 401 | Invalid credentials | "Invalid email/phone or password" — deliberately generic; never indicates which field was wrong (UC-10 alternate flow) |
+| 429 | Rate limit exceeded | "Too many requests, please try again later" |
 
 **Implemented in:** `src/controllers/auth.controller.ts → login` · `src/services/auth.service.ts → login` · `src/schemas/auth.schema.ts → loginSchema`
 
 ---
 
+#### POST /auth/refresh
+
+**Purpose:** Exchange a valid, unexpired refresh token for a new access token + refresh token pair, without requiring re-login (UC-10, NFR-014). Renews a session that would otherwise be cut short mid-class by a 30-minute access-token TTL.
+
+**Auth:** Public (authenticated via the refresh token itself, not a Bearer access token)
+
+**Request body:**
+```json
+{
+  "refreshToken": "string, required"
+}
+```
+
+**Success response — 200:**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "OK",
+  "data": {
+    "accessToken": "jwt-string",
+    "refreshToken": "opaque-string"
+  }
+}
+```
+The returned `refreshToken` is a new token; the one presented in the request is now revoked (rotation, Doc 04 `RefreshToken.replacedByTokenId`) and must not be reused.
+
+**Error responses:**
+| Status | Condition | Message |
+|---|---|---|
+| 401 | Token not found, expired | "Session expired — please log in again" |
+| 401 | Token already-rotated (reuse detected) | "Session expired — please log in again" — deliberately identical to the row above; the entire token family is revoked server-side, but the client-facing message never signals that theft was detected |
+
+**Implemented in:** `src/controllers/auth.controller.ts → refresh` · `src/services/auth.service.ts → refreshAccessToken` · `src/schemas/auth.schema.ts → refreshSchema`
+
+---
+
 #### POST /auth/logout
 
-**Purpose:** End the current session (UC-10).
+**Purpose:** End the current session on this device only (UC-10).
+
+**Auth:** Authenticated
+
+**Request body:**
+```json
+{
+  "refreshToken": "string, required"
+}
+```
+
+**Success response — 200:**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "OK",
+  "data": {}
+}
+```
+The presented `refreshToken` is revoked (NFR-015). The access token itself is not server-side revocable (stateless JWT) and simply expires naturally within 30 minutes — an accepted, deliberate V1 tradeoff, not an oversight.
+
+**Error responses:** none beyond the common 401.
+
+**Implemented in:** `src/controllers/auth.controller.ts → logout` · `src/services/auth.service.ts → logout`
+
+---
+
+#### POST /auth/logout-all
+
+**Purpose:** End every session across all of the caller's devices (UC-10, NFR-015) — e.g. after a suspected compromised device.
 
 **Auth:** Authenticated
 
@@ -214,10 +291,11 @@
   "data": {}
 }
 ```
+Every non-revoked `RefreshToken` for the caller's `userId` is revoked. Already-issued access tokens across other devices remain valid until their own natural 30-minute expiry (same stateless-JWT tradeoff as `/auth/logout`).
 
 **Error responses:** none beyond the common 401.
 
-**Implemented in:** `src/controllers/auth.controller.ts → logout` · `src/services/auth.service.ts → logout`
+**Implemented in:** `src/controllers/auth.controller.ts → logoutAll` · `src/services/auth.service.ts → logoutAll`
 
 ---
 
@@ -264,6 +342,8 @@
 
 **Auth:** Public
 
+**Rate limited:** 3 / hour, keyed by account — see `00-api-conventions.md` §0.8. Previously unenforced (Doc 08 flagged this as a gap); this is the fix.
+
 **Request body:**
 ```json
 {
@@ -283,7 +363,10 @@
 }
 ```
 
-**Error responses:** none beyond common validation.
+**Error responses:**
+| Status | Condition | Message |
+|---|---|---|
+| 429 | Rate limit exceeded | "Too many requests, please try again later" |
 
 **Implemented in:** `src/controllers/auth.controller.ts → verify` · `src/services/auth.service.ts → resendVerification`
 
@@ -294,6 +377,8 @@
 **Purpose:** Request a password-reset code/link via the verified contact method (UC-10).
 
 **Auth:** Public
+
+**Rate limited:** 3 / hour, keyed by account + IP — see `00-api-conventions.md` §0.8.
 
 **Request body:**
 ```json
@@ -343,6 +428,7 @@ Always returns `200` regardless of whether `identifier` matches an account, to a
   "data": {}
 }
 ```
+Every active `RefreshToken` for this `userId` is revoked as part of this call (NFR-015) — a password reset invalidates all existing sessions, forcing re-login everywhere.
 
 **Error responses:**
 | Status | Condition | Message |

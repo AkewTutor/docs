@@ -98,10 +98,12 @@ Uses the template's `src/lib/axios.ts`, largely unchanged — AKEWTutor's `Succe
 The base template hard-redirects to `/login` on any `401`. The sibling reference project narrowed that to "only redirect if the failing URL is under `/admin/`" because it had exactly one authenticated role. **AKEWTutor has four**, so neither rule fits as-is.
 
 Because there is a single shared `LoginPage.tsx` (see §0.1) rather than per-role login pages, the interceptor's job on a `401` is not to pick *which* login page to send someone to — there is only one. Its job is to:
-1. Clear `auth.store.ts` (token + user).
-2. Redirect to `/login?returnTo=<currentPath>`, so `LoginPage` can send the person back to whatever role-scoped or shared page they were on after re-authenticating.
+1. Attempt a silent recovery first: if `auth.store.ts` has a stored `refreshToken`, call `POST /auth/refresh` once. On success, update `auth.store.ts` with the new access/refresh token pair and retry the original request — the person never sees a redirect. This is what makes the 30-minute access-token TTL (NFR-014) invisible during a normal session instead of forcibly ending it.
+2. Only if that refresh attempt itself fails (refresh token expired, reused, or absent), clear `auth.store.ts` (token + refreshToken + user) and redirect to `/login?returnTo=<currentPath>`, so `LoginPage` can send the person back to whatever role-scoped or shared page they were on after re-authenticating.
 
-**M8 fix — resolved, not just flagged:** Doc 05b's file inventory previously described this as "redirects to the correct login route based on the failing request's role prefix," which read as multiple login routes. Corrected directly in `05b-frontend-structure.md`: there's no branching between multiple login *routes*, only a `returnTo` param carried through the single route that exists — matching the behavior described here exactly. Both docs now describe the same single `/login?returnTo=` design.
+**Critical fix #1:** earlier drafts of this doc set (and the frontend function-level spec) inherited the base template's plain "401 → clear store → redirect" behavior unchanged, without ever wiring up the `/auth/refresh` endpoint the backend already implements for NFR-014. As written, that meant every user — student, parent, tutor, admin — would be hard-logged-out every 30 minutes, including mid-class. Step 1 above is the fix: refresh-before-redirect, not redirect-on-first-401.
+
+**M8 fix — resolved, not just flagged:** Doc 05b's file inventory previously described this as "redirects to the correct login route based on the failing request's role prefix," which read as multiple login routes. Corrected directly in `05b-frontend-structure.md`: there's no branching between multiple login *routes*, only a `returnTo` param carried through the single route that exists — matching the behavior described here exactly. Both docs now describe the same single `/login?returnTo=` design (now layered on top of the refresh-first step above).
 
 ---
 

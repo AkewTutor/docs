@@ -4,6 +4,9 @@
 
 **Owns:** MatchRequest, TutorExclusion, Cohort, CohortMembership, FormatSwitchRequest. **Depends on:** Accounts & Guardianship (hard, per Feature Decomposition §1.1) — matching cannot run without a student's academic profile or a tutor's ranked subjects/availability existing first.
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §3], [Feature Decomposition §1]
+**Links forward to:** [8-3. Backend Function-Level Spec: Matching & Cohorts]
+
 ---
 
 ### 3.1 Endpoint Table

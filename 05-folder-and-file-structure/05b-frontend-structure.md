@@ -24,7 +24,7 @@
 | `src/styles/globals.css` | Styles | design tokens + namespaced `space-*` scale | — |
 | `index.html` | Config | font links | — |
 | `src/lib/utils.ts` | Util | `cn()` class-merge helper | — |
-| `src/components/ui/Button.tsx`, `Card.tsx`, `Input.tsx`, `Label.tsx`, `Checkbox.tsx`, `Badge.tsx` | Component | base primitives per `10-ui-foundation-spec.md` | — |
+| `src/components/ui/button.tsx`, `card.tsx`, `input.tsx`, `label.tsx`, `checkbox.tsx`, `badge.tsx` | Component | base primitives per `10-ui-foundation-spec.md`. **Fix (2026-09-07 audit):** filenames lowercased to match the template's shadcn CLI output (`npx shadcn@latest add button` → `button.tsx`) and its import convention (`@/components/ui/button`) — previously listed as PascalCase, which doesn't match what the CLI actually writes to disk | — |
 | `src/components/common/StatusBadge.tsx` | Component | consolidated status pill (approved/pending/overdue/missing/etc.) | — |
 | `src/components/common/EmptyState.tsx` | Component | shared empty-state pattern (no matches yet, no payments yet, etc.) | — |
 | `src/components/common/CountdownTimer.tsx` | Component | shared countdown used by class reminders, payment reminders, invite expiry | — |
@@ -40,6 +40,7 @@
 
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
+| `src/pages/LandingPage.tsx` | Page | public marketing homepage, no auth awareness | — |
 | `src/pages/LoginPage.tsx` | Page | role-aware login form | useAuth |
 | `src/pages/RegisterPage.tsx` | Page | student/parent/tutor registration entry | useAuth |
 | `src/pages/VerifyContactPage.tsx` | Page | email/phone verification code entry | useAuth |
@@ -47,6 +48,7 @@
 | `src/pages/PolicyPage.tsx` | Page | renders one policy type by route param (Privacy/Terms/Safety/Refund/Rules) | usePolicy |
 | `src/pages/NotificationsPage.tsx` | Page | notification center | useNotifications |
 | `src/pages/admin/AnnouncementsPage.tsx` | Page | admin composes/lists platform announcements | useAdminAnnouncements |
+| `src/pages/NotFoundPage.tsx` | Page | catch-all `*` route, no layout wrapper per template default | — |
 
 ### Layouts & Route Guards
 
@@ -62,7 +64,7 @@
 
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
-| `src/store/auth.store.ts` | Store | Zustand, persisted `auth-storage` — token + user identity/role | — |
+| `src/store/auth.store.ts` | Store | Zustand, persisted `auth-storage` — access token + refresh token + user identity/role | — |
 | `src/hooks/useAuth.ts` | Hook | useRegister, useLogin, useLogout, useVerifyContact, usePasswordReset | src/lib/axios.ts, auth.store.ts |
 | `tests/hooks/useAuth.test.ts` | Test | mirrors useAuth.ts | — |
 | `src/hooks/useNotifications.ts` | Hook | useMyNotifications, useMarkRead | src/lib/axios.ts |
@@ -246,7 +248,7 @@
 | `src/pages/student/AchievementsPage.tsx` | Page | XP, badges, streak display | useGamification |
 | `src/pages/student/LeaderboardPage.tsx` | Page | per-grade leaderboard | useGamification |
 | `src/pages/student/ChallengesPage.tsx` | Page | active weekly/monthly challenges | useChallenges |
-| `src/pages/admin/BadgeManagementPage.tsx` | Page | manage badge criteria/awards | useAdminGamification |
+| `src/pages/admin/BadgeManagementPage.tsx` | Page | manage badge criteria/awards, create new badges — **I2 fix** | useAdminGamification |
 | `src/pages/admin/ChallengeManagementPage.tsx` | Page | create/manage challenges | useChallenges |
 
 ### Feature Components
@@ -265,7 +267,7 @@
 |---|---|---|---|
 | `src/hooks/useGamification.ts` | Hook | useMyProgress, useLeaderboard | src/lib/axios.ts |
 | `tests/hooks/useGamification.test.ts` | Test | mirrors useGamification.ts | — |
-| `src/hooks/useAdminGamification.ts` | Hook | useAllBadges, useAdjustBadge | src/lib/axios.ts |
+| `src/hooks/useAdminGamification.ts` | Hook | useAllBadges, useCreateBadge — **I2 fix**, useAdjustBadge, useAdjustStudentXP — **I2 fix** | src/lib/axios.ts |
 | `tests/hooks/useAdminGamification.test.ts` | Test | mirrors useAdminGamification.ts | — |
 | `src/hooks/useChallenges.ts` | Hook | useActiveChallenges, useMyChallengeProgress, useCreateChallenge (admin) | src/lib/axios.ts |
 | `tests/hooks/useChallenges.test.ts` | Test | mirrors useChallenges.ts | — |
@@ -358,7 +360,7 @@
 |---|---|
 | `src/types/index.ts` | Add all types across the 8 features (StudentProfile, TutorProfile, Cohort, ScheduledSession, MessageThread, XPLedgerEntry, Payment, ComplaintReport, etc.) |
 | `src/constants/index.ts` | Add `QUERY_KEYS` for every hook above; add `ROUTES` for every page above, grouped by feature comment blocks |
-| `src/lib/axios.ts` | 401 interceptor clears `auth.store.ts` and redirects to `/login?returnTo=<currentPath>` (M8 fix — a single shared login route with a `returnTo` param, not a per-role login route keyed off the failing request's path prefix; also corrected the four-role count below, was previously written as three) — AKEWTutor has one shared `LoginPage.tsx` backing all four roles (Student, Parent, Tutor, Admin), so there is no "correct login route" to branch to, only the one route plus where to send the person back afterward. |
+| `src/lib/axios.ts` | 401 interceptor first attempts `POST /auth/refresh` with the stored `refreshToken` (Critical fix #1) and retries the original request on success; only if that refresh call itself fails does it clear `auth.store.ts` and redirect to `/login?returnTo=<currentPath>` (M8 fix — a single shared login route with a `returnTo` param, not a per-role login route keyed off the failing request's path prefix; also corrected the four-role count below, was previously written as three) — AKEWTutor has one shared `LoginPage.tsx` backing all four roles (Student, Parent, Tutor, Admin), so there is no "correct login route" to branch to, only the one route plus where to send the person back afterward. |
 | `.env.example` | Confirm `VITE_API_URL` includes `/api/v1` |
 
 ---

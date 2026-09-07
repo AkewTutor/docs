@@ -3,6 +3,9 @@
 
 **Owns:** StudentProfile, ParentProfile, TutorProfile, ParentStudentRelationship, Subject, TutorSubjectRanking, AvailabilitySlot. **Depends on:** `shared-config` (hard).
 
+**Links back to:** [06-api/02-accounts-guardianship-api.md], [05a. Backend Folder & File Structure §2]
+**Links forward to:** [9-2. Backend Test Spec: Accounts & Guardianship]
+
 ---
 
 ### src/schemas/studentProfile.schema.ts (new)

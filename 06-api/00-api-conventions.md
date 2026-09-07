@@ -147,4 +147,20 @@ Note the deliberate path splits, consistent with the feature-ownership model in 
 
 ---
 
+### 0.8 Rate Limiting
+
+Applies via `rateLimiter.middleware.ts` (Doc 05a), in-memory (`express-rate-limit`'s default store) — a per-process counter, acceptable given V1's single-instance deployment (Doc 02 NFR-013's scope note). Per Doc 02 NFR-013. Exceeding a limit returns `429` with envelope `{ "statusCode": 429, "success": false, "message": "Too many requests, please try again later", "errors": [] }` — not re-documented per endpoint below; only the affected endpoints are listed here.
+
+| Endpoint | Limit | Keyed by |
+|---|---|---|
+| `POST /auth/login` | 5 attempts / 15 min | `identifier` (email/phone) + IP, combined |
+| `POST /auth/resend-verification` | 3 / hour | Account (userId once resolved from the identifier) |
+| `POST /auth/forgot-password` | 3 / hour | Account + IP |
+| `POST /payments/initiate` | 10 / hour | Account — also covers promotion-code application, since a code is applied via this same endpoint's `promotionCode` field, not a separate one |
+| `POST /messaging/cohorts/:cohortId/messages` | 30 / minute | Account |
+
+All five are deliberately generous enough not to interfere with normal use (a legitimate user retrying a mistyped password, a parent messaging quickly) while bounding brute-force, verification-spam, and payment-endpoint abuse. Thresholds are config values (`src/config/rateLimits.ts`), not hardcoded, so Admin/Ops can retune per endpoint without a code change.
+
+---
+
 **Next:** proceed to → [01. Shared Config API]

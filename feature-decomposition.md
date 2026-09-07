@@ -15,7 +15,7 @@
 
 | # | Feature | Owns (entities) | Hard dependency (schema FK) | Soft dependency (workflow/integration only) |
 |---|---|---|---|---|
-| 1 | **shared-config** | User, Notification, PolicyDocument | — | — |
+| 1 | **shared-config** | User, Notification, PolicyDocument, RefreshToken | — | — |
 | 2 | **accounts-guardianship** | StudentProfile, ParentProfile, TutorProfile, ParentStudentRelationship, Subject, TutorSubjectRanking, AvailabilitySlot | shared-config | — |
 | 3 | **matching-cohorts** | MatchRequest, TutorExclusion, Cohort, CohortMembership, FormatSwitchRequest | accounts-guardianship | — |
 | 4 | **class-delivery-library** | ScheduledSession, RescheduleRequest, SessionMiss, RecordingConsent, Recording, LibraryMaterial, WeeklyAssessment | matching-cohorts | — |
@@ -29,7 +29,7 @@
 - **shared-config** is the only feature with no dependency of any kind — it's the foundation every other feature's auth and notification calls sit on.
 - **accounts-guardianship** bundles the Subject catalog and tutor availability alongside identity/guardianship, since matching can't function without a tutor's ranked subjects and open slots existing first — these are read-heavy, rarely-changing reference data owned by the same team that owns tutor profiles.
 - **matching-cohorts** is the pivot feature: everything downstream (class delivery, messaging, payments) keys off a `Cohort`, so this feature must be functionally complete before 4, 5, or 6 can be meaningfully tested end-to-end (though they can still be *coded* against a stubbed Cohort).
-- **payments-earnings** owns `PricingConfig` even though pricing is introduced early in the SRS (Section 07, before matching) — pricing is administratively a money concern (grouped with payouts/refunds in SRS Section 11.3), and matching only *reads* the active price, it doesn't own or mutate it.
+- **payments-earnings** owns `PricingConfig` even though pricing is introduced early in the SRS (Section 07, before matching) — pricing is administratively a money concern (grouped with payouts/refunds in SRS Section 11.3), and matching only *reads* the active price, it doesn't own or mutate it. **Fix (audit):** because `payments-earnings` is built last (step 7) while `matching-cohorts` (step 3) already needs to read an active price the moment a `Cohort` reaches `PENDING_PAYMENT`, `prisma/seed.ts` (Doc 05a §0) must seed a default `PricingConfig` row per `TutoringFormat` alongside the Admin user and Subject catalog — otherwise `matching-cohorts` has nothing to read on a fresh clone or in tests, regardless of build/parallelization order.
 - **support-trust-admin** is the one feature that is soft-coupled to almost everything, by design — disputes can be about a message thread, a session, a payment, or a tutor's standing. This mirrors why it's built last: it's an integration surface, not a domain of its own data.
 
 ---

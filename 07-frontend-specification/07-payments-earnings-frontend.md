@@ -5,6 +5,9 @@
 
 **Depends on:** Matching & Cohorts, Class Delivery & Library (hard — a `TutorEarning` links to a `ScheduledSession`).
 
+**Links back to:** [0. Frontend Conventions], [06-api/07-payments-earnings-api.md], [05b. Frontend Folder & File Structure §7]
+**Links forward to:** [8-7. Frontend Function-Level Spec: Payments & Earnings]
+
 ---
 
 ### 7.1 Routes
@@ -29,7 +32,7 @@ export interface PaymentRecord {
   id: string;
   cohortId: string;
   amount: string;
-  status: 'INITIATED' | 'SUCCESS' | 'FAILED';
+  status: 'PENDING' | 'SUCCESS' | 'FAILED';
   chapaCheckoutUrl: string | null;
   createdAt: string;
 }
@@ -54,7 +57,16 @@ export interface RefundCase {
   amount: string;
   reason: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedById: string | null;
+  approvedAt: string | null;
+  rejectedById: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
 }
+// I1 fix: this type was previously ahead of the backend — Doc 04's `Refund` entity now
+// has a matching `status`/`rejectedBy*`/`rejectionReason` shape (06-api/07-payments-earnings-api.md),
+// so `REJECTED` is a real, reachable state via `POST /admin/refunds/:refundId/reject` (useRejectRefund below).
 
 export interface TutorEarningsSummary {
   totalEarnedThisMonth: string;
@@ -153,6 +165,16 @@ export function useApproveRefund() {
   });
 }
 
+// I1 fix: previously missing — REJECTED was a type-level state with no way to reach it.
+export function useRejectRefund() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ refundId, rejectionReason }: { refundId: string; rejectionReason: string }) =>
+      api.post(`/admin/refunds/${refundId}/reject`, { rejectionReason }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [QUERY_KEYS.REFUNDS] }),
+  });
+}
+
 export function usePayoutBatches(page = 1) {
   return useQuery({
     queryKey: [QUERY_KEYS.PAYOUTS, page],
@@ -193,7 +215,7 @@ export function useCreatePromotion() {
 | `PaymentHistoryTable.tsx` | Paginated transaction list |
 | `PaymentReminderBanner.tsx` | 3-day countdown (`CountdownTimer`, foundation component), per-student anchored — a Parent with multiple children sees one banner per child with an outstanding payment, not one combined banner |
 | `PricingConfigForm.tsx` (admin) | Per-format price/split editor; client-side validates `platformSharePerHour + tutorSharePerHour === totalPerHour` before submit as a UX guard, though the backend remains authoritative for this arithmetic |
-| `RefundCard.tsx` (admin) | One refund case with its proration breakdown; Approve action wired to `useApproveRefund` |
+| `RefundCard.tsx` (admin) | One refund case with its proration breakdown; Approve action wired to `useApproveRefund`, Reject action (with a required reason prompt) wired to `useRejectRefund` — **I1 fix** |
 | `PayoutBatchTable.tsx` (admin) | Payout batches; itemizes any `reducedRateSessions` inline per tutor row rather than requiring a drill-in |
 | `PromotionForm.tsx` (admin) | Create/edit a promo code |
 

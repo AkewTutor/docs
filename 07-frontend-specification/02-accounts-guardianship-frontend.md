@@ -5,6 +5,9 @@
 
 **Depends on:** Shared Config (hard — every page here requires `auth.store.ts` to already exist).
 
+**Links back to:** [0. Frontend Conventions], [06-api/02-accounts-guardianship-api.md], [05b. Frontend Folder & File Structure §2]
+**Links forward to:** [8-2. Frontend Function-Level Spec: Accounts & Guardianship]
+
 ---
 
 ### 2.1 Routes

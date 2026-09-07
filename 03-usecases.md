@@ -1839,7 +1839,7 @@
 | Linked FR | FR-AD-018 |
 
 **Main flow:**
-1. Admin monitors and, where necessary, corrects leaderboard/achievement data (e.g., resolving a scoring dispute).
+1. Admin monitors and, where necessary, corrects leaderboard/achievement data (e.g., resolving a scoring dispute) by issuing a manual XP adjustment via `POST /admin/students/:studentId/xp-adjustments` (`XPLedgerEntry.reason: OTHER`) — **I2 fix**: since the leaderboard is a derived, non-stored view (Doc 04 §4.0 design decision) computed as `SUM(amount)` over `XPLedgerEntry`, this is the only mechanism by which a leaderboard position can actually be corrected; there is no separate "edit the leaderboard" write path. A correction is a signed adjustment (positive or negative), fully auditable via the ledger entry's `note` field, never a direct edit to a computed ranking.
 
 **Alternate / error flows:**
 - None.

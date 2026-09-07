@@ -5,6 +5,9 @@
 
 **Depends on:** Matching & Cohorts (hard — every session/recording/reschedule is scoped to a `Cohort`).
 
+**Links back to:** [0. Frontend Conventions], [06-api/04-class-delivery-library-api.md], [05b. Frontend Folder & File Structure §4]
+**Links forward to:** [8-4. Frontend Function-Level Spec: Class Delivery, Recording & Library]
+
 ---
 
 ### 4.1 Routes
@@ -67,8 +70,7 @@ export interface RescheduleRequest {
   id: string;
   sessionId: string;
   requestedNewTime: string;
-  classification: 'FREE' | 'SAME_DAY_MISS'; // per the 12-hour boundary rule
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  classification: 'FREE_RESCHEDULE' | 'SAME_DAY_MISS'; // per the 12-hour boundary rule
 }
 
 export interface WeeklyAssessment {
@@ -237,12 +239,12 @@ export function useAssessmentsForStudent(cohortMembershipId: string) {
 | `RecordingIndicatorBanner.tsx` | Persistent banner shown during an active session once consent is acknowledged — purely presentational, no polling of its own |
 | `RecordingPlayer.tsx` | Consumes `useSignedUrl`; shows `EmptyState` (foundation component) on a 404 ("Recording no longer available") rather than a generic error |
 | `MaterialUploadForm.tsx` | Tutor-only upload form (title + file), wired to `useUploadMaterial` |
-| `RescheduleForm.tsx` | New-time picker; **computes and displays the FREE vs. SAME_DAY_MISS classification live client-side** as the picker value changes, based on the 12-hour boundary rule, before the request is even submitted — mirrors backend logic for UX responsiveness, does not replace the backend's authoritative classification in the response |
+| `RescheduleForm.tsx` | New-time picker; **computes and displays the FREE_RESCHEDULE vs. SAME_DAY_MISS classification live client-side** as the picker value changes, based on the 12-hour boundary rule, before the request is even submitted — mirrors backend logic for UX responsiveness, does not replace the backend's authoritative classification in the response |
 | `AssessmentForm.tsx` | Tutor feedback + score-summary entry, one per student per week |
 
 ### 4.7 Form/Display Notes
 
-- `RescheduleForm`'s live FREE/SAME_DAY_MISS preview is a UI convenience only — the actual `classification` in the `RescheduleRequest` response (§4.2) is what persists and drives make-up/refund consequences; if the two ever disagree (e.g. the client's clock drifts), the server value wins and the form should reconcile to it after submit.
+- `RescheduleForm`'s live FREE_RESCHEDULE/SAME_DAY_MISS preview is a UI convenience only — the actual `classification` in the `RescheduleRequest` response (§4.2) is what persists and drives make-up/refund consequences; if the two ever disagree (e.g. the client's clock drifts), the server value wins and the form should reconcile to it after submit.
 - `CellDetailPanel`-style graceful degradation (per the sibling reference project's pattern) applies to `RecordingPlayer`: if `useSignedUrl` is still loading, show a skeleton; once resolved, either the player or the "no longer available" `EmptyState` — never a blank pane.
 
 ---

@@ -3,6 +3,9 @@
 
 **Depends on:** Matching & Cohorts (hard — every session/recording/reschedule is scoped to a `Cohort`).
 
+**Links back to:** [07-frontend-specification/04-class-delivery-library-frontend.md], [05b. Frontend Folder & File Structure §4]
+**Links forward to:** [9-4. Frontend Test Spec: Class Delivery, Recording & Library]
+
 ---
 
 ### Shared Pattern: Simple Query Hook
@@ -75,16 +78,16 @@
 |---|---|
 | Signature | `useRequestReschedule(): UseMutationResult<RescheduleRequest, AxiosError, { sessionId: string; requestedNewTime: string; reason: string }>` |
 | Purpose | Wraps `POST /reschedule`. |
-| Side effects | On success, the calling page navigates back to `/student/upcoming-classes` (or the tutor equivalent) with a confirmation toast that includes the server's authoritative `classification` (`FREE`/`SAME_DAY_MISS`) — **not** the client-computed preview from `RescheduleForm` (below), since the two can disagree on a clock-drift edge case and the server value is what actually persists (§4.7). |
+| Side effects | On success, the calling page navigates back to `/student/upcoming-classes` (or the tutor equivalent) with a confirmation toast that includes the server's authoritative `classification` (`FREE_RESCHEDULE`/`SAME_DAY_MISS`) — **not** the client-computed preview from `RescheduleForm` (below), since the two can disagree on a clock-drift edge case and the server value is what actually persists (§4.7). |
 | Test file | `tests/hooks/useReschedule.test.ts` |
 
 ### src/lib/classifyReschedule.ts (new util — full block)
 
 | Field | Detail |
 |---|---|
-| Signature | `classifyReschedule(sessionScheduledStart: string, requestedAt: Date): 'FREE' \| 'SAME_DAY_MISS'` |
+| Signature | `classifyReschedule(sessionScheduledStart: string, requestedAt: Date): 'FREE_RESCHEDULE' \| 'SAME_DAY_MISS'` |
 | Purpose | Client-side preview of the backend's 12-hour boundary rule, used only for live UX feedback in `RescheduleForm` — never the value actually submitted or trusted post-response. |
-| Logic | 1. Compute `hoursUntilSession = (new Date(sessionScheduledStart).getTime() - requestedAt.getTime()) / 3_600_000`. 2. Return `'FREE'` if `hoursUntilSession >= 12`, else `'SAME_DAY_MISS'`. |
+| Logic | 1. Compute `hoursUntilSession = (new Date(sessionScheduledStart).getTime() - requestedAt.getTime()) / 3_600_000`. 2. Return `'FREE_RESCHEDULE'` if `hoursUntilSession >= 12`, else `'SAME_DAY_MISS'`. |
 | Edge cases | A negative `hoursUntilSession` (attempting to reschedule a session already in progress or past) still resolves to `'SAME_DAY_MISS'` under this formula — this util does not separately guard against that case, since the reschedule form itself should already prevent selecting a past/in-progress session as the target before this function is ever called. |
 | Test file | `tests/lib/classifyReschedule.test.ts` |
 
@@ -166,7 +169,7 @@
 |---|---|
 | Route | `/reschedule/:sessionId` — `ProtectedRoute('any')` + `DashboardLayout` |
 | `RescheduleForm` local state | `requestedNewTime: Date \| null`, `reason: string`. |
-| Behavior (form) | 1. As `requestedNewTime` changes, computes `classifyReschedule(session.scheduledStart, new Date())` live and renders the resulting `FREE`/`SAME_DAY_MISS` badge next to the picker (§4.6) — this is a UX preview only. 2. On submit, `useRequestReschedule().mutate({ sessionId, requestedNewTime, reason })`. 3. After the mutation resolves, the confirmation screen reads `classification` from the **response**, reconciling to it even if it differs from the live preview shown a moment earlier (§4.7) — the form does not silently keep showing its own pre-submit guess. |
+| Behavior (form) | 1. As `requestedNewTime` changes, computes `classifyReschedule(session.scheduledStart, new Date())` live and renders the resulting `FREE_RESCHEDULE`/`SAME_DAY_MISS` badge next to the picker (§4.6) — this is a UX preview only. 2. On submit, `useRequestReschedule().mutate({ sessionId, requestedNewTime, reason })`. 3. After the mutation resolves, the confirmation screen reads `classification` from the **response**, reconciling to it even if it differs from the live preview shown a moment earlier (§4.7) — the form does not silently keep showing its own pre-submit guess. |
 
 **States:** idle (picker + live badge) · submitting · error · success (confirmation showing server `classification`)
 

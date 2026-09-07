@@ -4,6 +4,9 @@
 
 **Owns:** XPLedgerEntry, Badge, StudentBadge, TutorBadge, Streak, Challenge, ChallengeProgress. **Depends on:** Accounts & Guardianship (hard, per Feature Decomposition §1.1); soft-integrates with Class Delivery & Library (XP-award trigger on class-attended — no FK, no direct endpoint dependency).
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §6], [Feature Decomposition §1]
+**Links forward to:** [8-6. Backend Function-Level Spec: Gamification & Engagement]
+
 ---
 
 ### 6.1 Endpoint Table
@@ -14,10 +17,12 @@
 | GET | /gamification/leaderboard | Student\|Parent | UC-64 | FR-GA-002 |
 | GET | /gamification/badges/me | Student\|Parent | UC-63 | FR-GA-003 |
 | GET | /admin/badges | Admin | UC-77 | FR-AD-004 |
+| POST | /admin/badges | Admin | UC-77 | FR-AD-004, FR-GA-005 — **I2 fix** |
 | PATCH | /admin/badges/:badgeId | Admin | UC-77 | FR-AD-004, FR-GA-005 |
 | GET | /gamification/challenges | Student\|Parent | UC-65 | FR-SP-040, FR-GA-004 |
 | GET | /gamification/challenges/me | Student\|Parent | UC-65 | FR-SP-040, FR-GA-004 |
 | POST | /admin/challenges | Admin | UC-65 | FR-GA-004 |
+| POST | /admin/students/:studentId/xp-adjustments | Admin | UC-88 | FR-AD-018 — **I2 fix** |
 
 ---
 
@@ -175,6 +180,49 @@ No `rating`-derived field exists on any badge here — `criteriaDescription` is 
 
 ---
 
+#### POST /admin/badges — **I2 fix**
+
+**Purpose:** Create a new badge definition (UC-77, FR-AD-004, FR-GA-005; Doc 02 §10 v3.2 V1 Badge List callout — "Admin can add more later"). Previously only `PATCH /admin/badges/:badgeId` existed, which requires an existing badge and cannot create one; this closes that gap.
+
+**Auth:** Admin
+
+**Request body:**
+```json
+{
+  "name": "string, required",
+  "description": "string, required",
+  "category": "string, required — STUDENT | TUTOR",
+  "criteriaDescription": "string, required",
+  "isActive": "boolean, optional, default true"
+}
+```
+No `rating`-derived field is accepted — `criteriaDescription` must be experience/performance/achievement-based (Doc 04 Badge notes, FC-01); this is documentation guidance for the Admin filling the form, not a server-side content check.
+
+**Success response — 201:**
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "OK",
+  "data": {
+    "id": "uuid",
+    "name": "Quarter Champion",
+    "category": "STUDENT",
+    "criteriaDescription": "Reach a 90-day streak",
+    "isActive": true
+  }
+}
+```
+
+**Error responses:**
+| Status | Condition | Message |
+|---|---|---|
+| 400 | `name`/`description`/`criteriaDescription` missing, or `category` not `STUDENT`\|`TUTOR` | "Invalid badge definition" |
+
+**Implemented in:** `src/controllers/badge.controller.ts → adminCreate` · `src/services/badge.service.ts → createBadge` · `src/schemas/badge.schema.ts → createBadgeSchema`
+
+---
+
 #### PATCH /admin/badges/:badgeId
 
 **Purpose:** Adjust a badge's criteria or active status (UC-77).
@@ -312,6 +360,51 @@ No `rating`-derived field exists on any badge here — `criteriaDescription` is 
 | 400 | `endsAt` not after `startsAt` | "End time must be after start time" |
 
 **Implemented in:** `src/controllers/challenge.controller.ts → adminCreate` · `src/services/challenge.service.ts → createChallenge` · `src/schemas/challenge.schema.ts → createChallengeSchema`
+
+---
+
+#### POST /admin/students/:studentId/xp-adjustments — **I2 fix**
+
+**Purpose:** Manually adjust a student's XP total (UC-88, FR-AD-018; Doc 02 §10 v3.2 XP Point Values callout — `XPReason.OTHER`, "the only reason where `amount` is caller-supplied"). This is the sole mechanism for correcting the leaderboard, since the leaderboard is a derived, non-stored `SUM(amount)` view over `XPLedgerEntry` (Doc 04 §4.0) with no separate ranking table to edit directly — a positive adjustment (goodwill) or negative adjustment (correcting an error, e.g. an erroneously-awarded `CLASS_ATTENDED` XP) is written as an ordinary `XPLedgerEntry` row with `reason: OTHER`, so it flows into the leaderboard/badge/streak logic exactly the same way any system-triggered award does.
+
+**Auth:** Admin
+
+**Path params:** `studentId` — StudentProfile UUID
+
+**Request body:**
+```json
+{
+  "amount": "integer, required — positive or negative, non-zero",
+  "note": "string, required, 1–500 chars"
+}
+```
+`note` is required here even though `XPLedgerEntry.note` is nullable at the schema level (Doc 04) — every other `XPReason` is self-explanatory from its constant trigger, but `OTHER` has no such context, so this endpoint enforces the audit trail the schema only optionally supports.
+
+**Success response — 201:**
+```json
+{
+  "statusCode": 201,
+  "success": true,
+  "message": "OK",
+  "data": {
+    "id": "uuid",
+    "studentId": "uuid",
+    "amount": -20,
+    "reason": "OTHER",
+    "note": "Reversing an erroneous CLASS_ATTENDED award from session #4821",
+    "createdAt": "2026-09-06T15:00:00Z"
+  }
+}
+```
+
+**Error responses:**
+| Status | Condition | Message |
+|---|---|---|
+| 400 | `amount` is zero, missing, or non-integer | "amount must be a non-zero integer" |
+| 400 | `note` missing or empty | "A note is required for a manual XP adjustment" |
+| 404 | No `StudentProfile` matches `studentId` | "Student not found" |
+
+**Implemented in:** `src/controllers/xp.controller.ts → adminAdjust` · `src/services/xp.service.ts → adminAdjustXP` · `src/schemas/xp.schema.ts → adjustXPSchema`
 
 ---
 

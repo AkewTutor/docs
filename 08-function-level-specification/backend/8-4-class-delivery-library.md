@@ -3,6 +3,9 @@
 
 **Owns:** ScheduledSession, RescheduleRequest, SessionMiss, RecordingConsent, Recording, LibraryMaterial, WeeklyAssessment. **Depends on:** `matching-cohorts` (hard) — every session belongs to a confirmed `Cohort`.
 
+**Links back to:** [06-api/04-class-delivery-library-api.md], [05a. Backend Folder & File Structure §4]
+**Links forward to:** [9-4. Backend Test Spec: Class Delivery, Recording & Library]
+
 ---
 
 ### src/schemas/session.schema.ts (new)

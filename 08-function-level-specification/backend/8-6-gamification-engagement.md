@@ -3,6 +3,9 @@
 
 **Owns:** XPLedgerEntry, Badge, StudentBadge, TutorBadge, Streak, Challenge, ChallengeProgress. **Depends on:** `accounts-guardianship` (hard); soft-integrates with `class-delivery-library` (XP-award trigger on class-attended — no FK, event-based only).
 
+**Links back to:** [06-api/06-gamification-engagement-api.md], [05a. Backend Folder & File Structure §6]
+**Links forward to:** [9-6. Backend Test Spec: Gamification & Engagement]
+
 ---
 
 ### src/services/xp.service.ts (new)
@@ -29,12 +32,24 @@ Test file: `tests/services/xp.service.test.ts` — includes per-grade-scoping an
 
 Test file: `tests/services/xp.service.test.ts` — includes the per-grade-scoping and name-display cases directly.
 
+#### adminAdjustXP — **I2 fix**
+
+| Field | Detail |
+|---|---|
+| Signature | `adminAdjustXP(studentId: string, adminId: string, amount: number, note: string): Promise<XPLedgerEntryDTO>` |
+| Purpose | The Admin-facing entry point for `XPReason.OTHER` (Doc 02 §10 v3.2 XP Point Values callout). Closes the gap where `OTHER` was defined as "the only reason where `amount` is caller-supplied" but no function actually accepted a caller-supplied amount from an Admin. Also the sole mechanism behind UC-88's leaderboard correction — the leaderboard has no separate stored ranking to edit (Doc 04 §4.0), so correcting it means writing a signed `XPLedgerEntry`. |
+| Throws | `ApiError(404, "Student not found")` — no `StudentProfile` matches `studentId`. `ApiError(400, "amount must be a non-zero integer")`. `ApiError(400, "A note is required for a manual XP adjustment")`. |
+| Side effects | Calls the same underlying insert path as `awardXP` — an append-only `XPLedgerEntry` row with `reason: OTHER`, `amount` exactly as supplied (positive or negative), `note` always populated (unlike other reasons, where `note` is optional). Does **not** call `streak.service.ts → updateStreakOnActivity` — a manual XP correction is not itself a day of platform activity, so it must never fabricate or extend a streak. |
+
+Test file: `tests/services/xp.service.test.ts`
+
 ### src/controllers/xp.controller.ts (new)
 
 | Handler | Calls | Response |
 |---|---|---|
 | getMyProgress | `xp.service` read: sum of `XPLedgerEntry` for caller-resolved `studentId` (see edge case) + `Streak` row + recent entries | 200 |
 | getLeaderboard | `xpService.getLeaderboard(req.user.id, req.user.role, req.query.studentId, req.query.period)` | 200 |
+| adminAdjust | `xpService.adminAdjustXP(req.params.studentId, req.user.id, req.body.amount, req.body.note)` — **I2 fix** | 201 |
 
 | Field | Detail |
 |---|---|
@@ -47,8 +62,9 @@ Test file: `tests/services/xp.service.test.ts` — includes the per-grade-scopin
 |---|---|---|---|
 | GET | /gamification/xp/me | `authMiddleware` | getMyProgress |
 | GET | /gamification/leaderboard | `authMiddleware` | getLeaderboard |
+| POST | /admin/students/:studentId/xp-adjustments | `authMiddleware, requireRole('ADMIN'), validate(adjustXPSchema)` | adminAdjust — **I2 fix** |
 
-Neither route restricts by `requireRole` at the middleware layer — both are `Student\|Parent`, with the caller-vs-target-student resolution (and the `ACTIVE ParentStudentRelationship` check for a Parent caller) done inside the service function, identical in shape to `getLeaderboard`'s existing pattern.
+Neither of the first two routes restricts by `requireRole` at the middleware layer — both are `Student\|Parent`, with the caller-vs-target-student resolution (and the `ACTIVE ParentStudentRelationship` check for a Parent caller) done inside the service function, identical in shape to `getLeaderboard`'s existing pattern. The Admin route is the one exception, restricted by `requireRole('ADMIN')` at the middleware layer since it has no caller-vs-target ambiguity to resolve.
 
 ---
 
@@ -64,12 +80,22 @@ Neither route restricts by `requireRole` at the middleware layer — both are `S
 
 Test file: `tests/services/badge.service.test.ts` — includes the no-rating-field-exists case (a schema/shape assertion rather than a runtime branch).
 
+#### createBadge — **I2 fix**
+
+| Field | Detail |
+|---|---|
+| Signature | `createBadge(input: { name, description, category, criteriaDescription, isActive? }): Promise<BadgeDTO>` |
+| Purpose | Create a new badge definition (`POST /admin/badges`). Closes the gap where Doc 02 §10's v3.2 V1 Badge List callout promised "Admin can add more later" but only an *edit* endpoint (`PATCH /admin/badges/:badgeId`) existed. |
+| Edge cases | Same structural constraint as `awardStudentBadge`/`awardTutorBadge`: no `rating`-derived field exists on `Badge` to accidentally populate (Doc 04 Badge notes, FC-01) — `criteriaDescription` is always free-text. |
+
+Test file: `tests/services/badge.service.test.ts`
+
 #### adminManageBadges
 
 | Field | Detail |
 |---|---|
 | Signature | `adminManageBadges(page?, limit?, category?): Promise<PaginatedBadgeDTO>` — list mode. `adminManageBadges(badgeId: string, input: { criteriaDescription?, isActive? }): Promise<BadgeDTO>` — adjust mode, per Doc 05a's single-function naming covering both the list and adjust endpoints. |
-| Purpose | List all badge definitions and award history for review (`GET /admin/badges`), and adjust criteria/active status (`PATCH /admin/badges/:badgeId`). |
+| Purpose | List all badge definitions and award history for review (`GET /admin/badges`), and adjust criteria/active status (`PATCH /admin/badges/:badgeId`). Creation is handled separately by `createBadge` above (**I2 fix**), not folded into this function, since create/list/adjust have distinct enough signatures that a single overloaded function would be harder to type safely. |
 
 Test file: `tests/services/badge.service.test.ts`
 
@@ -79,6 +105,7 @@ Test file: `tests/services/badge.service.test.ts`
 |---|---|---|
 | listMyBadges | direct read of `StudentBadge` joined to `Badge`, scoped to the caller-resolved `studentId` (H3 fix — see below) | 200 |
 | adminListAll | `badgeService.adminManageBadges(req.query.category, req.query.page, req.query.limit)` | 200 |
+| adminCreate | `badgeService.createBadge(req.body)` — **I2 fix** | 201 |
 | adminAdjust | `badgeService.adminManageBadges(req.params.badgeId, req.body)` | 200 |
 
 | Field | Detail |
@@ -91,6 +118,7 @@ Test file: `tests/services/badge.service.test.ts`
 |---|---|---|---|
 | GET | /gamification/badges/me | `authMiddleware` | listMyBadges |
 | GET | /admin/badges | `authMiddleware, requireRole('ADMIN')` | adminListAll |
+| POST | /admin/badges | `authMiddleware, requireRole('ADMIN'), validate(createBadgeSchema)` | adminCreate — **I2 fix** |
 | PATCH | /admin/badges/:badgeId | `authMiddleware, requireRole('ADMIN')` | adminAdjust |
 
 ---

@@ -3,6 +3,9 @@
 
 **Owns:** PricingConfig, Payment, PaymentPause, Refund, TutorEarning, Payout, PromotionCode. **Depends on:** `matching-cohorts`, `class-delivery-library` (hard — `TutorEarning` → `ScheduledSession`).
 
+**Links back to:** [06-api/07-payments-earnings-api.md], [05a. Backend Folder & File Structure §7]
+**Links forward to:** [9-7. Backend Test Spec: Payments & Earnings]
+
 ---
 
 ### src/utils/providers/chapa.client.ts (new)
@@ -72,7 +75,7 @@ Test file: `tests/services/payment.service.test.ts`
 
 | Method | Path | Middleware chain | Handler |
 |---|---|---|---|
-| POST | /initiate | `authMiddleware, validate(initiatePaymentSchema)` | initiate |
+| POST | /initiate | `authMiddleware, rateLimiter(PAYMENT_INITIATE_LIMIT), validate(initiatePaymentSchema)` | initiate |
 | POST | /webhook/chapa | — (Webhook auth: signature-verified inside the handler, not `authMiddleware`; this route needs the raw request body, so it must be excluded from the global `express.json()` body-parsing or use a raw-body capture, unlike every other route in the app) | webhook |
 | GET | /history | `authMiddleware` | getHistory |
 
@@ -161,6 +164,12 @@ Same one-router-two-mount-points pattern as `policy.routes.ts`.
 
 ---
 
+### src/schemas/refund.schema.ts (new) — **I1 fix**
+
+| Schema | Shape |
+|---|---|
+| rejectRefundSchema | `z.object({ params: z.object({ refundId: z.string().uuid() }), body: z.object({ rejectionReason: z.string().min(1) }) })` |
+
 ### src/services/refund.service.ts (new)
 
 #### calculateProration
@@ -168,18 +177,38 @@ Same one-router-two-mount-points pattern as `policy.routes.ts`.
 | Field | Detail |
 |---|---|
 | Signature | `calculateProration(paymentId: string, reason: RefundReason): Promise<RefundCalculationDTO>` |
-| Purpose | Always by sessions delivered, never calendar days (Section 13). `amount = round((sessionsRemaining / totalSessionsBilled) × payment.amount, 2)`, where `totalSessionsBilled = payment.cohortMembership.cohort.sessionsPerWeek × 4` (Doc 02 §7 v3.2 callout, Doc 04 `Cohort.sessionsPerWeek`) — the current 28-day cycle's billed count, not a running lifetime total. Rounded to 2 decimal places per Section 13's v3.2 monetary-rounding rule (M7 fix) — never stored as an unrounded `Decimal`. |
+| Purpose | Pure calculation, no persistence (**I1 fix** — clarified). Always by sessions delivered, never calendar days (Section 13). `amount = round((sessionsRemaining / totalSessionsBilled) × payment.amount, 2)`, where `totalSessionsBilled = payment.cohortMembership.cohort.sessionsPerWeek × 4` (Doc 02 §7 v3.2 callout, Doc 04 `Cohort.sessionsPerWeek`) — the current 28-day cycle's billed count, not a running lifetime total. Rounded to 2 decimal places per Section 13's v3.2 monetary-rounding rule (M7 fix) — never stored as an unrounded `Decimal`. Returns a `RefundCalculationDTO` (`{ reason, sessionsRemaining, totalSessionsBilled, amount }`); it never writes a `Refund` row itself — `createPendingRefund` (below) does that. |
 | Edge cases | A free make-up session under FR-MK-001 is never counted as undelivered toward `sessionsRemaining` — it's a same-cost substitute for a session already billed, not an additional undelivered session (Section 13 Definition of Done #4). This is enforced by counting *distinct billed sessions*, not raw `ScheduledSession` rows, when computing `sessionsRemaining`. |
 
 Test file: `tests/services/refund.service.test.ts` — includes the sessions-delivered proration formula case explicitly, and the make-up-session-not-double-counted case.
+
+#### createPendingRefund — **I1 fix**
+
+| Field | Detail |
+|---|---|
+| Signature | `createPendingRefund(paymentId: string, reason: RefundReason): Promise<RefundDTO>` |
+| Purpose | The single entry point every refund-eligible event calls (tutor dropout, platform outage, format switch, session-undelivered detection, or admin dispute resolution — Doc 04 `RefundReason`). Calls `calculateProration` internally, then persists a `Refund` row at `status: PENDING` with the returned `sessionsRemaining`/`totalSessionsBilled`/`amount` already stored — nothing is recalculated later at approval time (preserves the H4 guarantee that the formula is never bypassed or backfilled). Returns the created row. |
+| Called by | `formatSwitch.service.ts → requestSwitch` (`FORMAT_SWITCH`), `adminDispute.service.ts → resolveDispute` (`ADMIN_DISPUTE_RESOLUTION`), and the tutor-dropout/platform-outage/session-undelivered system handlers per Doc 04's `RefundReason` enum. |
+
+Test file: `tests/services/refund.service.test.ts`
 
 #### approveRefund
 
 | Field | Detail |
 |---|---|
-| Signature | `approveRefund(refundId: string, adminId: string): Promise<{ id, amount, approvedById, approvedAt }>` |
-| Throws | `ApiError(409, "This case does not meet the refund policy conditions")` — the refund case doesn't meet the Section 03 policy conditions (e.g. student-caused disruption). |
-| Side effects | Marks `Refund.status: APPROVED`; the actual money movement back to the payer is a Chapa-side concern outside this function's scope per Doc 04/06 (not modeled as a separate outbound API call in the source docs — flagged as an implementation detail to confirm against Chapa's refund API at build time). |
+| Signature | `approveRefund(refundId: string, adminId: string): Promise<{ id, status, amount, approvedById, approvedAt }>` |
+| Throws | `ApiError(404, "Refund not found")` if no `Refund` row matches `refundId`. `ApiError(409, "This refund has already been actioned")` if `status !== PENDING` (**I1 fix**). `ApiError(409, "This case does not meet the refund policy conditions")` — the refund case doesn't meet the Section 03 policy conditions (e.g. student-caused disruption). |
+| Side effects | Transitions `status: PENDING → APPROVED` and sets `approvedById`/`approvedAt` — **never** recomputes `amount` (**I1 fix**: `amount` was already fixed at `createPendingRefund` time). The actual money movement back to the payer is a Chapa-side concern outside this function's scope per Doc 04/06 (not modeled as a separate outbound API call in the source docs — flagged as an implementation detail to confirm against Chapa's refund API at build time). |
+
+Test file: `tests/services/refund.service.test.ts`
+
+#### rejectRefund — **I1 fix**
+
+| Field | Detail |
+|---|---|
+| Signature | `rejectRefund(refundId: string, adminId: string, rejectionReason: string): Promise<{ id, status, rejectedById, rejectedAt, rejectionReason }>` |
+| Throws | `ApiError(404, "Refund not found")` if no `Refund` row matches `refundId`. `ApiError(409, "This refund has already been actioned")` if `status !== PENDING`. |
+| Side effects | Transitions `status: PENDING → REJECTED` and sets `rejectedById`/`rejectedAt`/`rejectionReason`. No money movement; no other entity is touched. |
 
 Test file: `tests/services/refund.service.test.ts`
 
@@ -187,8 +216,9 @@ Test file: `tests/services/refund.service.test.ts`
 
 | Handler | Calls | Response |
 |---|---|---|
-| adminReview | `refundService.calculateProration`-backed paginated queue read, filtered by `status` | 200 |
+| adminReview | Paginated Prisma read of `Refund` rows filtered by `status` (default `PENDING`), ordered by `createdAt` — **I1 fix**: no longer a live `calculateProration` computation; the queue reads persisted, already-calculated rows | 200 |
 | adminApprove | `refundService.approveRefund(req.params.refundId, req.user.id)` | 200 |
+| adminReject | `refundService.rejectRefund(req.params.refundId, req.user.id, req.body.rejectionReason)` — **I1 fix** | 200 |
 
 ### src/routes/refund.routes.ts (new)
 
@@ -196,6 +226,7 @@ Test file: `tests/services/refund.service.test.ts`
 |---|---|---|---|
 | GET | / | `authMiddleware, requireRole('ADMIN')` | adminReview |
 | POST | /:refundId/approve | `authMiddleware, requireRole('ADMIN')` | adminApprove |
+| POST | /:refundId/reject | `authMiddleware, requireRole('ADMIN'), validate(rejectRefundSchema)` | adminReject — **I1 fix** |
 
 Mounted at `/admin/refunds`.
 

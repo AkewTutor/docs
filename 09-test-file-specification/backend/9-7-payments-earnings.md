@@ -39,6 +39,7 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/services/pricing.service.ts | tests/services/pricing.service.test.ts | Unit (mocked Prisma, real `Decimal` arithmetic) | ☐ |
 | src/controllers/pricing.controller.ts | tests/controllers/pricing.controller.test.ts | Unit (mocked service) | ☐ |
 | src/routes/pricing.routes.ts | tests/routes/pricing.routes.test.ts | Integration (supertest) | ☐ |
+| src/schemas/refund.schema.ts | tests/schemas/refund.schema.test.ts | Unit | ☐ |
 | src/services/refund.service.ts | tests/services/refund.service.test.ts | Unit (mocked Prisma, real `Decimal` arithmetic) | ☐ |
 | src/controllers/refund.controller.ts | tests/controllers/refund.controller.test.ts | Unit (mocked service) | ☐ |
 | src/routes/refund.routes.ts | tests/routes/refund.routes.test.ts | Integration (supertest) | ☐ |
@@ -203,7 +204,17 @@ FRs: FR-AD-009, Section 7 Definition of Done #2. **OWASP: A01:2021 – Broken Ac
 
 ---
 
-### 9.11 Test Case Detail — refund.service.test.ts
+### 9.11 Test Case Detail — refund.schema.test.ts — **I1 fix**
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Rejects an empty rejectionReason | — | parse `{ params: { refundId: <uuid> }, body: { rejectionReason: "" } }` | fails — `rejectionReason` requires `.min(1)` |
+| Rejects a non-UUID refundId | — | parse `{ params: { refundId: "not-a-uuid" }, body: { rejectionReason: "Student-caused disruption" } }` | fails |
+| Accepts a valid payload | — | parse `{ params: { refundId: <uuid> }, body: { rejectionReason: "Student-caused disruption" } }` | passes |
+
+---
+
+### 9.12 Test Case Detail — refund.service.test.ts
 
 FRs: FR-PB-007, FR-AD-012, FR-SP-048, Section 13. **OWASP: A01:2021 – Broken Access Control (Admin-only), A04:2021 – Insecure Design (proration correctness is a direct monetary-integrity concern).**
 
@@ -217,27 +228,49 @@ FRs: FR-PB-007, FR-AD-012, FR-SP-048, Section 13. **OWASP: A01:2021 – Broken A
 | A free make-up session is never double-counted as undelivered | mock a `SessionMiss`-triggered free make-up session already delivered (FR-MK-001), alongside genuinely undelivered sessions | call `calculateProration(...)` | `sessionsRemaining` counts only genuinely undelivered *billed* sessions — the make-up session is not additionally subtracted as if it were a separate undelivered slot (Section 13 Definition of Done #4) |
 | totalSessionsBilled is the current cycle's count, not a lifetime total | mock a cohort several billing cycles into its lifetime | call `calculateProration(...)` | `totalSessionsBilled` reflects only `sessionsPerWeek × 4` for the *current* 28-day cycle, not an accumulated multi-cycle count |
 
+#### createPendingRefund — **I1 fix**
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Creates a PENDING refund with the calculated amount already stored | mock `calculateProration` resolving `{ sessionsRemaining: 3, totalSessionsBilled: 8, amount: "300.00" }` | call `createPendingRefund(paymentId, 'TUTOR_DROPOUT')` | a `Refund` row is created with `status: PENDING`, `amount: "300.00"`, `approvedById: null`, `approvedAt: null` |
+| Never recalculates on later approval | create a pending refund, then mock `calculateProration` to return a *different* amount, then call `approveRefund` | call `approveRefund(refundId, adminId)` | the persisted `amount` from creation time is unchanged; `calculateProration` is not invoked a second time |
+
 #### approveRefund
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| Approves a qualifying refund | mock a case meeting Section 3 policy conditions | call `approveRefund(refundId, adminId)` | resolves `{ id, amount, approvedById: adminId, approvedAt }`; sets `Refund.status: APPROVED` |
-| Rejects a non-qualifying case | mock a student-caused-disruption scenario (doesn't meet policy conditions) | call `approveRefund(refundId, adminId)` | throws `ApiError(409, "This case does not meet the refund policy conditions")` |
+| Approves a qualifying, PENDING refund | mock a `PENDING` `Refund` row meeting Section 3 policy conditions | call `approveRefund(refundId, adminId)` | resolves `{ id, status: 'APPROVED', amount, approvedById: adminId, approvedAt }`; sets `Refund.status: APPROVED` |
+| Rejects (throws) a non-qualifying case | mock a `PENDING` row from a student-caused-disruption scenario (doesn't meet policy conditions) | call `approveRefund(refundId, adminId)` | throws `ApiError(409, "This case does not meet the refund policy conditions")` |
+| Refund not found — **I1 fix** | mock no matching `Refund` row | call `approveRefund(refundId, adminId)` | throws `ApiError(404, "Refund not found")` |
+| Cannot approve an already-actioned refund — **I1 fix** | mock a `Refund` row already at `status: APPROVED` | call `approveRefund(refundId, adminId)` | throws `ApiError(409, "This refund has already been actioned")` |
+| Cannot approve a rejected refund — **I1 fix** | mock a `Refund` row already at `status: REJECTED` | call `approveRefund(refundId, adminId)` | throws `ApiError(409, "This refund has already been actioned")` |
+
+#### rejectRefund — **I1 fix**
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Rejects a PENDING refund | mock a `PENDING` `Refund` row | call `rejectRefund(refundId, adminId, "Student-caused disruption")` | resolves `{ id, status: 'REJECTED', rejectedById: adminId, rejectedAt, rejectionReason: "Student-caused disruption" }`; `approvedById`/`approvedAt` remain null |
+| Refund not found | mock no matching `Refund` row | call `rejectRefund(refundId, adminId, "reason")` | throws `ApiError(404, "Refund not found")` |
+| Cannot reject an already-actioned refund | mock a `Refund` row already at `status: APPROVED` or `REJECTED` | call `rejectRefund(refundId, adminId, "reason")` | throws `ApiError(409, "This refund has already been actioned")` |
+| No money movement or side effects | mock a `PENDING` refund; spy on `earning.service`/Chapa-call sites | call `rejectRefund(...)` | no downstream money-movement call is made — only the `Refund` row's status/audit fields change |
 
 ---
 
-### 9.12 Test Case Detail — refund.controller.test.ts / refund.routes.test.ts
+### 9.13 Test Case Detail — refund.controller.test.ts / refund.routes.test.ts
 
 **OWASP: A01:2021 – Broken Access Control.**
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| Both routes require Admin | no Authorization header, then a Parent token | request `GET /admin/refunds` and `POST /admin/refunds/:id/approve` | `401` then `403` |
+| All three routes require Admin — **I1 fix** | no Authorization header, then a Parent token | request `GET /admin/refunds`, `POST /admin/refunds/:id/approve`, and `POST /admin/refunds/:id/reject` | `401` then `403` on each |
 | adminApprove passes req.user.id as approver | mock service | call controller with a valid Admin token | `approveRefund` called with `req.user.id`, never a client-suppliable approver id |
+| adminReject passes req.user.id as rejector and requires a body — **I1 fix** | mock service; valid Admin token | call controller with `{ rejectionReason: "..." }` | `rejectRefund` called with `req.user.id` and `req.body.rejectionReason`, never a client-suppliable rejector id |
+| adminReject validates rejectionReason — **I1 fix** | valid Admin token | request `POST /admin/refunds/:id/reject` with an empty body | rejected by `validate(rejectRefundSchema)` with `400`, controller never called |
+| adminReview reads persisted rows, not a live calculation — **I1 fix** | seed `Refund` rows at `PENDING` and `APPROVED` | request `GET /admin/refunds?status=PENDING` | only the `PENDING` rows are returned, with their already-stored `amount`; `calculateProration` is not invoked by this handler |
 
 ---
 
-### 9.13 Test Case Detail — earning.service.test.ts
+### 9.14 Test Case Detail — earning.service.test.ts
 
 FRs: FR-MK-009, FR-AD-011, FR-TU-019. **OWASP: A04:2021 – Insecure Design (the reduced make-up rate is a monetary business rule with a hard-coded, easy-to-invert condition).**
 
@@ -262,7 +295,7 @@ FRs: FR-MK-009, FR-AD-011, FR-TU-019. **OWASP: A04:2021 – Insecure Design (the
 
 ---
 
-### 9.14 Test Case Detail — earning.controller.test.ts / earning.routes.test.ts
+### 9.15 Test Case Detail — earning.controller.test.ts / earning.routes.test.ts
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
@@ -271,7 +304,7 @@ FRs: FR-MK-009, FR-AD-011, FR-TU-019. **OWASP: A04:2021 – Insecure Design (the
 
 ---
 
-### 9.15 Test Case Detail — payout.service.test.ts
+### 9.16 Test Case Detail — payout.service.test.ts
 
 FRs: FR-TU-019, FR-AD-011. **OWASP: A01:2021 – Broken Access Control (Admin-only), A04:2021 – Insecure Design (no client-facing creation path is itself a deliberate control against a client forging a payout).**
 
@@ -293,7 +326,7 @@ FRs: FR-TU-019, FR-AD-011. **OWASP: A01:2021 – Broken Access Control (Admin-on
 
 ---
 
-### 9.16 Test Case Detail — payout.controller.test.ts / payout.routes.test.ts
+### 9.17 Test Case Detail — payout.controller.test.ts / payout.routes.test.ts
 
 **OWASP: A01:2021 – Broken Access Control.**
 
@@ -304,7 +337,7 @@ FRs: FR-TU-019, FR-AD-011. **OWASP: A01:2021 – Broken Access Control (Admin-on
 
 ---
 
-### 9.17 Test Case Detail — promotion.schema.test.ts
+### 9.18 Test Case Detail — promotion.schema.test.ts
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
@@ -314,7 +347,7 @@ FRs: FR-TU-019, FR-AD-011. **OWASP: A01:2021 – Broken Access Control (Admin-on
 
 ---
 
-### 9.18 Test Case Detail — promotion.service.test.ts
+### 9.19 Test Case Detail — promotion.service.test.ts
 
 FRs: FR-AD-016. **OWASP: A01:2021 – Broken Access Control (Admin-only create), A04:2021 – Insecure Design (expired/inactive-code rejection is the central anti-abuse control here).**
 
@@ -333,7 +366,7 @@ FRs: FR-AD-016. **OWASP: A01:2021 – Broken Access Control (Admin-only create),
 
 ---
 
-### 9.19 Test Case Detail — promotion.controller.test.ts / promotion.routes.test.ts
+### 9.20 Test Case Detail — promotion.controller.test.ts / promotion.routes.test.ts
 
 **OWASP: A01:2021 – Broken Access Control.**
 
@@ -345,7 +378,7 @@ FRs: FR-AD-016. **OWASP: A01:2021 – Broken Access Control (Admin-only create),
 
 ---
 
-### 9.20 Coverage Honesty Check (per PR Steward, at review time)
+### 9.21 Coverage Honesty Check (per PR Steward, at review time)
 
 - [ ] `calculateProration`'s sessions-delivered formula is tested against the authoritative worked example from Doc 02 §13 (not just an arbitrarily invented set of numbers), and the make-up-session-not-double-counted case is tested with an actual delivered make-up session in the fixture, not merely asserted from the formula in the abstract.
 - [ ] `handleChapaWebhook`'s idempotency is tested by replaying the *identical* payload against an already-`SUCCESS` `Payment`, asserting zero additional side effects (no second `generateSessionsForCohort` call, no anchor reset) — not just that the endpoint returns `200` twice.
@@ -357,13 +390,13 @@ FRs: FR-AD-016. **OWASP: A01:2021 – Broken Access Control (Admin-only create),
 
 ---
 
-### 9.21 Out of Scope for Automated Testing (and why)
+### 9.22 Out of Scope for Automated Testing (and why)
 
 - **Real Chapa checkout/webhook network behavior** — `chapa.client.ts` is unit-tested against a mocked HTTP layer only; actual provider auth, webhook delivery reliability, and payload-shape drift need a manual or separately-tracked integration pass, same posture as `sms.client.ts`/`email.client.ts` in 9-1.
 - **The actual money movement for an approved refund** — `approveRefund` marks `Refund.status: APPROVED` in this system's data model; the outbound Chapa-side refund call is explicitly flagged in Doc 8-7 as an implementation detail to confirm against Chapa's refund API at build time, not modeled as a separate function here.
 - **`monthlyPayout.job.ts`/`paymentReminder.job.ts` interval scheduling** — no business logic of their own; the logic they call is already covered directly via `payout.service.test.ts` and the shared `notification.service.test.ts`.
 - **Production `Decimal` precision/library configuration** (rounding-mode global settings, currency-locale formatting) — unit tests confirm the functions compute and round correctly per the documented rule; library-level configuration correctness is a setup/config-review concern.
-- **Server-side rate limiting on `initiatePayment`/promotion-code application** — **flagged as an open item**, same class of gap as 9-1's login rate-limiting note: no limit is documented anywhere in Docs 02/06/08 for repeated failed promotion-code or payment-initiation attempts (OWASP A04:2021 — Insecure Design / abuse-testing risk for guessing valid promo codes).
+- **Server-side rate limiting on `initiatePayment`/promotion-code application** — resolved (Doc 02 NFR-013): `rateLimiter.middleware.ts` (10/hour per account, covering both payment initiation and promo-code application since they share one endpoint) is applied at the route level and unit-tested in `9-1-shared-config.md`'s `rateLimiter.middleware.test.ts` section — not re-tested per-feature, since the middleware itself is feature-agnostic and its application here is a one-line route change (`8-7-payments-earnings.md`).
 
 ---
 

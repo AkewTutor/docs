@@ -25,9 +25,11 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | Source file | Test file | Test type | Written before code? |
 |---|---|---|---|
 | src/services/xp.service.ts | tests/services/xp.service.test.ts | Unit (mocked Prisma, mocked `streak.service.updateStreakOnActivity`) | ☐ |
+| src/schemas/xp.schema.ts | tests/schemas/xp.schema.test.ts | Unit — **I2 fix** | ☐ |
 | src/controllers/xp.controller.ts | tests/controllers/xp.controller.test.ts | Unit (mocked service) | ☐ |
 | src/routes/xp.routes.ts | tests/routes/xp.routes.test.ts | Integration (supertest) | ☐ |
 | src/services/badge.service.ts | tests/services/badge.service.test.ts | Unit (mocked Prisma) | ☐ |
+| src/schemas/badge.schema.ts | tests/schemas/badge.schema.test.ts | Unit — **I2 fix** | ☐ |
 | src/controllers/badge.controller.ts | tests/controllers/badge.controller.test.ts | Unit (mocked service) | ☐ |
 | src/routes/badge.routes.ts | tests/routes/badge.routes.test.ts | Integration (supertest) | ☐ |
 | src/services/streak.service.ts | tests/services/streak.service.test.ts | Unit (mocked Prisma) | ☐ |
@@ -68,6 +70,18 @@ FRs: FR-SP-039, FR-GA-002, Section 10 v3.2 XP point values. **OWASP: A01:2021 �
 | Student caller ignores any studentId override | mock caller is a Student | call `getLeaderboard(studentId, 'STUDENT', someOtherStudentId, 'WEEKLY')` | resolves the caller's own leaderboard context — the supplied `someOtherStudentId` has no effect |
 | callerRank present even outside the top ranks | mock caller ranked 47th of 50 in-grade students | call `getLeaderboard(...)` | resolves `callerRank: 47` even though `rankings` itself may only list the top N |
 
+#### adminAdjustXP — **I2 fix**
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Writes an XPLedgerEntry with reason OTHER and the exact supplied amount | — | call `adminAdjustXP(studentId, adminId, -20, "Reversing an erroneous award")` | inserted `XPLedgerEntry` has `amount: -20`, `reason: 'OTHER'`, `note: "Reversing an erroneous award"` |
+| Accepts a negative amount (correction) as well as positive (goodwill) | — | call `adminAdjustXP(studentId, adminId, 10, "Goodwill")`, then `adminAdjustXP(studentId, adminId, -10, "Correction")` | both succeed; the ledger contains both signed entries, and a `SUM(amount)` read nets to zero |
+| Rejects a zero amount | — | call `adminAdjustXP(studentId, adminId, 0, "note")` | throws `ApiError(400, "amount must be a non-zero integer")` |
+| Rejects a missing/empty note | — | call `adminAdjustXP(studentId, adminId, 10, "")` | throws `ApiError(400, "A note is required for a manual XP adjustment")` |
+| Student not found | mock no matching `StudentProfile` | call `adminAdjustXP(studentId, adminId, 10, "note")` | throws `ApiError(404, "Student not found")` |
+| Never calls updateStreakOnActivity | spy on `streak.service.updateStreakOnActivity` | call `adminAdjustXP(studentId, adminId, 10, "note")` | assert it was NOT called — a manual correction must never fabricate or extend a streak, unlike `awardXP` |
+| Feeds into the leaderboard exactly like any other ledger entry | create an adjustment, then call `getLeaderboard` for the same grade/period | call `getLeaderboard(...)` | the adjustment's `amount` is reflected in the student's aggregated total — confirms UC-88's leaderboard-correction claim is actually true end-to-end, not just that a row was written |
+
 ---
 
 ### 9.3 Test Case Detail — xp.controller.test.ts / xp.routes.test.ts
@@ -76,11 +90,14 @@ FRs: FR-SP-039, FR-GA-002, Section 10 v3.2 XP point values. **OWASP: A01:2021 �
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| Both routes require auth | no Authorization header | request `GET /gamification/xp/me`, `GET /gamification/leaderboard` | both `401` |
+| Both public-facing routes require auth | no Authorization header | request `GET /gamification/xp/me`, `GET /gamification/leaderboard` | both `401` |
 | getMyProgress is Student\|Parent (H3 fix) | mock controller layer, Student token vs. Parent token with `?studentId=` | call each | both reach the handler; a Parent without `?studentId=` is rejected — flagged since Doc 8-6 requires it for Parent but Doc 06's query description marks it "required for Parent," so the controller must enforce this itself if the schema doesn't |
 | Parent resolution uses the ACTIVE ParentStudentRelationship pattern | mock service | call controller as Parent | `getMyProgress`'s underlying read resolves `req.query.studentId` through the same relationship check as `xp.service.ts → getLeaderboard`, not a raw pass-through |
 | A streak reset never reduces totalXP | mock `Streak.currentStreakDays` reset to 1 after a gap, `totalXP` ledger sum unchanged | call `getMyProgress` | resolves the same `totalXP` as before the reset — badges/XP already earned are untouched (UC-63 alternate flow) |
 | getLeaderboard requires `period` | mock controller layer, valid token, no `?period=` | request `GET /gamification/leaderboard` | rejected — `period` is a required enum per Doc 06 §6.2 |
+| adminAdjust requires Admin — **I2 fix** | no Authorization header, then a Parent token | request `POST /admin/students/:studentId/xp-adjustments` | `401` then `403` |
+| adminAdjust passes req.user.id as the adjusting admin — **I2 fix** | mock service; valid Admin token | call controller with `{ amount: 10, note: "..." }` | `adminAdjustXP` called with `req.user.id`, never a client-suppliable admin id |
+| adminAdjust validates body — **I2 fix** | valid Admin token | request with `amount: 0` or a missing `note` | rejected by `validate(adjustXPSchema)`, controller never called |
 
 ---
 
@@ -96,6 +113,14 @@ FRs: FR-GA-003, FR-GA-005, FR-AD-004, FR-AD-018 (`adminManageBadges` is the Admi
 | Awards a tutor badge | — | call `awardTutorBadge(tutorId, badgeId)` | resolves `TutorBadgeDTO`; a `TutorBadge` row created |
 | No `rating`-derived field exists anywhere on the returned DTO | inspect the resolved `StudentBadgeDTO`/`TutorBadgeDTO` and the joined `Badge` row | call either award function | assert neither object contains a `rating`/`score`-style key — this is a schema/shape assertion (FC-01's structural constraint), not a runtime branch, since no such column exists to begin with |
 | Re-awarding a badge the student already has | mock a `StudentBadge` row already exists for `(studentId, badgeId)` | call `awardStudentBadge(studentId, badgeId)` again | **flagged, not hard-asserted:** Doc 8-6 doesn't specify whether this is a silent no-op, an upsert, or a unique-constraint error; this doc requires the implementer's chosen behavior be documented and applied consistently rather than guessing a specific outcome here |
+
+#### createBadge — **I2 fix**
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Creates a new badge definition | — | call `createBadge({ name: "Quarter Champion", description: "...", category: 'STUDENT', criteriaDescription: "Reach a 90-day streak" })` | resolves `BadgeDTO`; a `Badge` row created with `isActive: true` (default) |
+| isActive defaults to true when omitted | — | call `createBadge({ ...input, isActive: undefined })` | resolves `isActive: true` |
+| No `rating`-derived field exists on the created row | inspect the resolved `BadgeDTO` | call `createBadge(...)` | assert no `rating`/`score`-style key is present — same structural guarantee as `awardStudentBadge`/`awardTutorBadge` above |
 
 #### adminManageBadges
 
@@ -114,7 +139,8 @@ FRs: FR-GA-003, FR-GA-005, FR-AD-004, FR-AD-018 (`adminManageBadges` is the Admi
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
 | listMyBadges is Student\|Parent (H3 fix) | mock service | call controller as Student, then as Parent with `?studentId=` | both resolve; Parent resolution follows the same `ACTIVE ParentStudentRelationship` pattern as `xp.controller.ts` |
-| adminListAll / adminAdjust require Admin | no Authorization header, then a Student token | request `GET /admin/badges` and `PATCH /admin/badges/:id` with (a) no token, (b) a Student token | (a) `401`; (b) `403` |
+| adminListAll / adminCreate / adminAdjust require Admin — **I2 fix** | no Authorization header, then a Student token | request `GET /admin/badges`, `POST /admin/badges`, and `PATCH /admin/badges/:id` with (a) no token, (b) a Student token | (a) `401` for each; (b) `403` for each |
+| adminCreate validates body — **I2 fix** | valid Admin token | request `POST /admin/badges` with a missing `name` or an invalid `category` | rejected by `validate(createBadgeSchema)`, controller never called |
 | adminAdjust forwards only the documented fields | mock service | call controller with `{ criteriaDescription: "...", isActive: true, rating: 5 }` | the underlying service call receives only `criteriaDescription`/`isActive` — no `rating`-style field is ever forwarded, consistent with 9.4's structural guarantee |
 
 ---

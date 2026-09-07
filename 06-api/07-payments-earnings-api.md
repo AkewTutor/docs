@@ -4,6 +4,9 @@
 
 **Owns:** PricingConfig, Payment, PaymentPause, Refund, TutorEarning, Payout, PromotionCode. **Depends on:** Matching & Cohorts, Class Delivery & Library (hard, per Feature Decomposition §1.1 — `TutorEarning` → `ScheduledSession`).
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §7], [Feature Decomposition §1]
+**Links forward to:** [8-7. Backend Function-Level Spec: Payments & Earnings]
+
 ---
 
 ### 7.1 Endpoint Table
@@ -18,6 +21,7 @@
 | PUT | /admin/pricing/:format | Admin | UC-80 | FR-PR-004, FR-AD-009 |
 | GET | /admin/refunds | Admin | UC-83 | FR-AD-012 |
 | POST | /admin/refunds/:refundId/approve | Admin | UC-83 | FR-AD-012, FR-PB-007 |
+| POST | /admin/refunds/:refundId/reject | Admin | UC-83 | FR-AD-012, FR-PB-007 — **I1 fix** |
 | GET | /tutors/me/earnings | Tutor | UC-70 | FR-TU-018, FR-TU-019 |
 | GET | /admin/payouts | Admin | UC-82 | FR-AD-011 |
 | POST | /admin/payouts/:payoutId/mark-paid | Admin | UC-82 | FR-AD-011 |
@@ -34,6 +38,8 @@
 **Purpose:** Begin a Chapa payment for an Admin-approved booking/auto-match (UC-36), including the independent Grades 6–12 path with no guardian required (UC-37, FR-PB-008).
 
 **Auth:** Student|Parent
+
+**Rate limited:** 10 / hour, keyed by account — see `00-api-conventions.md` §0.8. Also covers promotion-code application, since a code is applied via this same endpoint's `promotionCode` field.
 
 **Request body:**
 ```json
@@ -64,6 +70,7 @@
 |---|---|---|
 | 409 | `cohortMembershipId` is not in a state awaiting payment (e.g. not yet Admin-approved) | "This membership is not awaiting payment" |
 | 400 | `promotionCode` invalid, expired, or inactive | "Invalid or expired promotion code" |
+| 429 | Rate limit exceeded | "Too many requests, please try again later" |
 
 **Implemented in:** `src/controllers/payment.controller.ts → initiate` · `src/services/payment.service.ts → initiatePayment` · `src/schemas/payment.schema.ts → initiatePaymentSchema`
 
@@ -283,7 +290,7 @@ Reflected on the **next new booking only** — a `Payment`/`TutorEarning` alread
 
 #### GET /admin/refunds
 
-**Purpose:** Admin's refund-review queue (UC-83, FR-AD-012).
+**Purpose:** Admin's refund-review queue (UC-83, FR-AD-012). Returns persisted `Refund` rows filtered by `status` — every eligible case (tutor dropout, platform outage, format switch, undelivered session, or admin dispute resolution) creates a `Refund` row at `status: PENDING` immediately, with `amount`/`sessionsRemaining`/`totalSessionsBilled` already computed; approving or rejecting only changes `status` and the corresponding audit fields (**I1 fix** — see `04-database-and-data-model.md` Refund entity).
 
 **Auth:** Admin
 
@@ -291,6 +298,7 @@ Reflected on the **next new booking only** — a `Payment`/`TutorEarning` alread
 ```
 ?status=PENDING&page=1&limit=20
 ```
+`status` accepts `PENDING | APPROVED | REJECTED` and defaults to `PENDING` if omitted.
 
 **Success response — 200:**
 ```json
@@ -304,9 +312,16 @@ Reflected on the **next new booking only** — a `Payment`/`TutorEarning` alread
         "id": "uuid",
         "paymentId": "uuid",
         "reason": "TUTOR_DROPOUT",
+        "status": "PENDING",
         "sessionsRemaining": 2,
         "totalSessionsBilled": 8,
-        "amount": "87.50"
+        "amount": "87.50",
+        "approvedById": null,
+        "approvedAt": null,
+        "rejectedById": null,
+        "rejectedAt": null,
+        "rejectionReason": null,
+        "createdAt": "2026-09-01T10:00:00Z"
       }
     ],
     "page": 1,
@@ -318,13 +333,13 @@ Reflected on the **next new booking only** — a `Payment`/`TutorEarning` alread
 
 **Error responses:** none.
 
-**Implemented in:** `src/controllers/refund.controller.ts → adminReview` · `src/services/refund.service.ts → calculateProration`
+**Implemented in:** `src/controllers/refund.controller.ts → adminReview` · `src/services/refund.service.ts` (reads persisted `Refund` rows directly — **I1 fix**: no longer routed through `calculateProration`, see `createPendingRefund` for where that calculation now happens)
 
 ---
 
 #### POST /admin/refunds/:refundId/approve
 
-**Purpose:** Approve a calculated, prorated refund (UC-83, FR-AD-012, FR-PB-007). Proration is always by sessions delivered, never calendar days (Section 13 Refund Proration Formula) — `amount = (sessionsRemaining / totalSessionsBilled) × payment.amount`. A free make-up session under FR-MK-001 is never counted as undelivered toward `sessionsRemaining` (Section 13 Definition of Done #4).
+**Purpose:** Approve a `PENDING` refund (UC-83, FR-AD-012, FR-PB-007). Proration was already calculated and stored when the `Refund` row was created; this endpoint only transitions `status: PENDING → APPROVED` and sets `approvedById`/`approvedAt` — it never recomputes or accepts an admin-supplied `amount` (Section 13 Refund Proration Formula, `amount = (sessionsRemaining / totalSessionsBilled) × payment.amount`; H4 fix still applies). A free make-up session under FR-MK-001 is never counted as undelivered toward `sessionsRemaining` (Section 13 Definition of Done #4).
 
 **Auth:** Admin
 
@@ -338,6 +353,7 @@ Reflected on the **next new booking only** — a `Payment`/`TutorEarning` alread
   "message": "OK",
   "data": {
     "id": "uuid",
+    "status": "APPROVED",
     "amount": "87.50",
     "approvedById": "uuid",
     "approvedAt": "2026-09-06T15:00:00Z"
@@ -348,9 +364,57 @@ Reflected on the **next new booking only** — a `Payment`/`TutorEarning` alread
 **Error responses:**
 | Status | Condition | Message |
 |---|---|---|
+| 404 | No `Refund` row exists for `refundId` | "Refund not found" |
+| 409 | `Refund.status` is not `PENDING` (already `APPROVED` or `REJECTED`) | "This refund has already been actioned" |
 | 409 | Refund case doesn't meet the Section 03 policy conditions (e.g. student-caused disruption) | "This case does not meet the refund policy conditions" |
 
 **Implemented in:** `src/controllers/refund.controller.ts → adminApprove` · `src/services/refund.service.ts → approveRefund`
+
+---
+
+#### POST /admin/refunds/:refundId/reject — **I1 fix**
+
+**Purpose:** Reject a `PENDING` refund (UC-83, FR-AD-012, FR-PB-007). Used when an Admin reviews a refund-eligible case and determines it does not warrant a payout — e.g. on closer review the disruption was student-caused, or the case is a duplicate. Transitions `status: PENDING → REJECTED` and sets `rejectedById`/`rejectedAt`/`rejectionReason`. No money moves and no `Payment`/`TutorEarning` rows are affected.
+
+**Auth:** Admin
+
+**Path params:** `refundId` — Refund UUID
+
+**Request body:**
+```json
+{
+  "rejectionReason": "Disruption was student-initiated per Section 03 policy; does not qualify."
+}
+```
+
+| Field | Type | Constraints |
+|---|---|---|
+| rejectionReason | String | required, 1–500 chars |
+
+**Success response — 200:**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "OK",
+  "data": {
+    "id": "uuid",
+    "status": "REJECTED",
+    "rejectedById": "uuid",
+    "rejectedAt": "2026-09-06T15:00:00Z",
+    "rejectionReason": "Disruption was student-initiated per Section 03 policy; does not qualify."
+  }
+}
+```
+
+**Error responses:**
+| Status | Condition | Message |
+|---|---|---|
+| 400 | `rejectionReason` missing or empty | "A rejection reason is required" |
+| 404 | No `Refund` row exists for `refundId` | "Refund not found" |
+| 409 | `Refund.status` is not `PENDING` (already `APPROVED` or `REJECTED`) | "This refund has already been actioned" |
+
+**Implemented in:** `src/controllers/refund.controller.ts → adminReject` · `src/services/refund.service.ts → rejectRefund` · `src/schemas/refund.schema.ts → rejectRefundSchema`
 
 ---
 

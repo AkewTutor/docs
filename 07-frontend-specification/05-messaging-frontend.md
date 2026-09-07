@@ -5,6 +5,9 @@
 
 **Depends on:** Matching & Cohorts (hard — a `MessageThread` is 1:1 with a `Cohort`).
 
+**Links back to:** [0. Frontend Conventions], [06-api/05-messaging-api.md], [05b. Frontend Folder & File Structure §5]
+**Links forward to:** [8-5. Frontend Function-Level Spec: In-Platform Messaging]
+
 ---
 
 ### 5.1 Routes

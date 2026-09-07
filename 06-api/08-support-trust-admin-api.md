@@ -6,6 +6,9 @@
 
 > ℹ️ **M1 fix — resolved, not just flagged:** Doc 03's UC-66 main flow originally said it routes to "UC-88 in Section Q," a typo — UC-88 is *Admin manages leaderboards and achievements*, unrelated to disputes. Corrected directly in `03-usecases.md`: UC-66 now points to **UC-87** (*Admin manages complaints and disputes*, FR-AD-017), which is what this file links to below.
 
+**Links back to:** [00. API Conventions], [05a. Backend Folder & File Structure §8], [Feature Decomposition §1]
+**Links forward to:** [8-8. Backend Function-Level Spec: Support, Trust & Admin Reporting]
+
 ---
 
 ### 8.1 Endpoint Table
@@ -245,7 +248,7 @@ An empty queue returns `complaints: []` with `200` (see 0.3) — this is the nor
   "status": "string, required — UNDER_REVIEW | RESOLVED | DISMISSED",
   "resolutionAction": "string, optional — NO_ACTION | WARNING_ISSUED | REFUND_ISSUED | TUTOR_SUSPENDED, required if status is RESOLVED",
   "resolutionNotes": "string, required, internal note explaining the decision",
-  "affectedCohortMembershipId": "string (UUID), required if resolutionAction is REFUND_ISSUED — identifies which student's CohortMembership/current billing cycle to prorate the refund against (the dispute-detail view, GET /admin/disputes/:complaintId, surfaces the candidate membership(s) linked to the complaint's aboutSessionId/aboutThreadId for Admin to pick from — most disputes resolve to exactly one, but a group-cohort complaint naming the whole class could in principle need one refund call per affected membership)"
+  "affectedCohortMembershipId": "string (UUID), required if resolutionAction is REFUND_ISSUED — identifies which student's CohortMembership/current billing cycle to prorate the refund against (the dispute-detail view, GET /admin/disputes/:complaintId, surfaces the candidate membership(s) linked to the complaint's relatedSessionId/relatedThreadId for Admin to pick from — most disputes resolve to exactly one, but a group-cohort complaint naming the whole class could in principle need one refund call per affected membership)"
 }
 ```
 
@@ -414,7 +417,7 @@ Each `eventType` maps to a read of an existing table's `createdAt` (or equivalen
   }
 }
 ```
-Every figure is computed on request from existing owned/related data, not a new stored aggregate table: `uniqueStudentsTaught` from `TutorProfile` (M6 fix — the platform-wide canonical field name, see below), `completedSessionCount`/`tutorCausedMissCount` from `ScheduledSession`/`SessionMiss` (Class Delivery & Library), `badgeCount` from `TutorBadge` (Gamification & Engagement), `complaintCount` from `ComplaintReport.aboutUserId` (this feature's own data). This mirrors `platform-health`'s already-established pattern of a read-only, computed-on-request response with no corresponding `POST`.
+Every figure is computed on request from existing owned/related data, not a new stored aggregate table: `uniqueStudentsTaught` from `TutorProfile` (M6 fix — the platform-wide canonical field name, see below), `completedSessionCount`/`tutorCausedMissCount` from `ScheduledSession`/`SessionMiss` (Class Delivery & Library), `badgeCount` from `TutorBadge` (Gamification & Engagement), `complaintCount` from `ComplaintReport` rows where the tutor is derived via `relatedCohortId → Cohort.tutorId` (falling back to `relatedSessionId → ScheduledSession → Cohort.tutorId`) — see 04-database-and-data-model.md §4.2.9 "Tutor resolution" (this feature's own data). This mirrors `platform-health`'s already-established pattern of a read-only, computed-on-request response with no corresponding `POST`.
 
 **Error responses:** none beyond common auth/validation.
 

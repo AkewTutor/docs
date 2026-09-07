@@ -5,6 +5,9 @@
 
 **Depends on:** Accounts & Guardianship (hard — student/tutor profiles must exist before a search or recommendation means anything).
 
+**Links back to:** [0. Frontend Conventions], [06-api/03-matching-cohorts-api.md], [05b. Frontend Folder & File Structure §3]
+**Links forward to:** [8-3. Frontend Function-Level Spec: Matching & Cohorts]
+
 ---
 
 ### 3.1 Routes
