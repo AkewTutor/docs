@@ -6,6 +6,12 @@ Per the standing rule in `05a-backend-structure.md` ("every service file gets a 
 
 **Scope note:** this is the one test doc that also covers Doc 05a §0's cross-cutting foundations (middleware, jwt/password/pagination utils) — they have no owning feature, and shared-config is the foundation feature they sit alongside architecturally.
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
+**Integration (persistence) tier for this module lives in a sibling file:** see `9-1-shared-config-persistence.md` (added Phase 5.4) for `refreshAccessToken`'s rotation and reuse-detection guarantees, the real cascade-delete behavior on `User` deletion, and the `LOGIN_FAILED_THRESHOLD` audit entry's durability — all tested against a real database.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -35,6 +41,8 @@ NFR-001, NFR-002, NFR-003, NFR-005, NFR-006, and OWASP A06:2021 are intentionall
 |---|---|---|---|
 | prisma/schema.prisma | — | Not required (declarative, see 9.6) | — |
 | prisma/seed.ts | — | Not required (see 9.6) | — |
+| src/app.ts | — | Not required — Express bootstrap only (mounts routers, global middleware, the webhook body-parsing exception noted in `8-7-payments-earnings.md`); every route it mounts is already exercised through that route's own Integration (HTTP contract) test, which is the level this file's wiring is actually proven at | — |
+| src/config/db.ts | — | Not required — Prisma 7 driver-adapter singleton (a `pg` `Pool` wrapped in `PrismaPg`, cached on `globalThis`), no branching logic beyond the export itself, per Doc 8-1's own note that this file has "no function-level detail beyond the singleton export" | — |
 | src/middlewares/auth.middleware.ts | tests/middlewares/auth.middleware.test.ts | Unit (mocked `jwt.ts`) | ☐ |
 | src/middlewares/error.middleware.ts | tests/middlewares/error.middleware.test.ts | Unit (mocked `req`/`res`/`next`) | ☐ |
 | src/middlewares/validate.middleware.ts | tests/middlewares/validate.middleware.test.ts | Unit (real Zod schemas, mocked `req`/`res`/`next`) | ☐ |
@@ -44,20 +52,23 @@ NFR-001, NFR-002, NFR-003, NFR-005, NFR-006, and OWASP A06:2021 are intentionall
 | src/utils/refreshToken.ts | tests/utils/refreshToken.test.ts | Unit (real `crypto`) | ☐ |
 | src/utils/password.ts | tests/utils/password.test.ts | Unit (real `bcrypt`) | ☐ |
 | src/utils/pagination.ts | tests/utils/pagination.test.ts | Unit (pure function) | ☐ |
+| src/schemas/auth.schema.ts | — | Covered via `validate.middleware.test.ts` (real-schema mass-assignment/oversized-payload cases, §9.7) plus `auth.routes.test.ts`'s named per-schema rows (`registerStudentSchema`, `loginSchema`, etc., §9.10) — no dedicated schema test file, per the same "validation logic proven at the point it's actually invoked" convention `9-3-matching-cohorts.md §9.3`'s `injection.test.ts` note applies to `searchTutorsQuerySchema` | — |
 | src/services/auth.service.ts | tests/services/auth.service.test.ts | Unit (mocked Prisma, bcrypt, jwt, sms/email clients) | ☐ |
 | src/controllers/auth.controller.ts | tests/controllers/auth.controller.test.ts | Unit (mocked auth.service via `vi.mock`) | ☐ |
-| src/routes/auth.routes.ts | tests/routes/auth.routes.test.ts | Integration (supertest, mocked service layer) | ☐ |
+| src/routes/auth.routes.ts | tests/routes/auth.routes.test.ts | Integration (HTTP contract, supertest, mocked service layer) | ☐ |
 | src/utils/providers/sms.client.ts | tests/utils/providers/sms.client.test.ts | Unit (mocked Geez SMS HTTP call) | ☐ |
 | src/utils/providers/email.client.ts | tests/utils/providers/email.client.test.ts | Unit (mocked Brevo HTTP call) | ☐ |
+| src/schemas/notification.schema.ts | — | Covered via `validate.middleware.test.ts` (§9.7) plus `notification.routes.test.ts`'s `listNotificationsQuerySchema` row (§9.10) — no dedicated schema test file, same convention as `auth.schema.ts` above | — |
 | src/services/notification.service.ts | tests/services/notification.service.test.ts | Unit (mocked Prisma, sms/email clients) | ☐ |
 | src/controllers/notification.controller.ts | tests/controllers/notification.controller.test.ts | Unit (mocked notification.service) | ☐ |
-| src/routes/notification.routes.ts | tests/routes/notification.routes.test.ts | Integration (supertest, mocked service layer) | ☐ |
+| src/routes/notification.routes.ts | tests/routes/notification.routes.test.ts | Integration (HTTP contract, supertest, mocked service layer) | ☐ |
 | src/services/adminAnnouncement.service.ts | tests/services/adminAnnouncement.service.test.ts | Unit (mocked Prisma, mocked `notification.service.dispatchNotification`) | ☐ |
 | src/controllers/adminAnnouncement.controller.ts | tests/controllers/adminAnnouncement.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/adminAnnouncement.routes.ts | tests/routes/adminAnnouncement.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/adminAnnouncement.routes.ts | tests/routes/adminAnnouncement.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
+| src/schemas/policy.schema.ts | — | Covered via `validate.middleware.test.ts`'s oversized-payload case (§9.7, uses `publishPolicySchema`'s `.min()` constraint directly) plus `policy.routes.test.ts`'s enum-rejection row (§9.10) — no dedicated schema test file, same convention as `auth.schema.ts`/`notification.schema.ts` above | — |
 | src/services/policy.service.ts | tests/services/policy.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/policy.controller.ts | tests/controllers/policy.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/policy.routes.ts | tests/routes/policy.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/policy.routes.ts | tests/routes/policy.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/jobs/notificationRetry.job.ts | — | Not required — underlying logic covered by `notification.service.test.ts`'s `retryFailed` cases; the interval-registration wrapper itself is excluded per Doc 05a's standing convention (only `src/services/*` gets a mirrored test) | — |
 | src/jobs/scheduler.ts | — | Not required — no business logic of its own (Doc 8-1) | — |
 
@@ -200,6 +211,7 @@ FRs: FR-SP-001–005, FR-TU-001–002, FR-AC-002, FR-AC-005. NFRs: NFR-007, NFR-
 | Token issued with the correct user id and role | mock a valid login; spy on `signAccessToken`'s call args | call `login(identifier, password)` | assert `signAccessToken` was called with `{ id: user.id, role: user.role }` — not an email, not a placeholder |
 | Password/hash never included in the resolved result | mock a valid login | call `login(identifier, password)` | assert `result.user` has no `passwordHash`/`password` field |
 | Suspended/restricted account still returns the identical generic error | mock `findFirst` to find a user with `accountStatus: 'SUSPENDED'` | call `login(identifier, correctPassword)` | **open item, flag for implementer confirmation:** Doc 08 does not explicitly state whether a suspended account gets the identical 401 or a distinct message. Given the account-enumeration-resistance pattern already established for the not-found/wrong-password cases, this doc recommends the identical `ApiError(401, ...)` (never confirming account existence or state to an unauthenticated caller) — but this should be confirmed against `adminPeople.service.ts`'s suspension behavior (Doc 8-2) before finalizing this test, since a mismatch here would be a genuine security decision, not a guess to silently bake into the suite |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Repeated failed logins past a threshold are audit-logged** | mock `findFirst` to find a user; `bcrypt.compare` → `false`; mock this is the Nth consecutive failed attempt for this identifier within the tracking window (N = the same threshold `rateLimiter.middleware.ts` uses for `login`, per NFR-013) | call `login(identifier, wrongPassword)` for the Nth time | `auditLog.service.record` called with `{ actor: <the matched user's id, not the caller — the caller is unauthenticated>, action: 'LOGIN_FAILED_THRESHOLD', target: <same user id>, timestamp }` — this fires once the threshold is crossed, not on every single failed attempt (which would be excessive log volume for what is, below the threshold, ordinary user error); the 401 response to the caller is unaffected either way, per the account-enumeration-resistance cases above — this audit entry is Admin-internal only |
 
 #### logout
 
@@ -325,6 +337,7 @@ FRs: FR-NO-001–011. **OWASP: A01:2021 – Broken Access Control (ownership che
 | Delivery failure writes a FAILED row, never throws | mock the relevant client to resolve `{ success: false }` | call `dispatchNotification` | `Notification.status` set to `'FAILED'`; the function itself resolves normally — a caller (e.g. `auth.service.registerUser`) must never see this function throw |
 | Correct default status on write | mock a pending send | call `dispatchNotification` | the row is initially written with `status: 'QUEUED'` — **not** `'PENDING'`, matching Doc 8-1's explicit correction of an earlier draft that used a non-existent enum value; a test asserting the wrong status here would silently reintroduce that bug |
 | Never propagates an exception to the caller under any failure mode | mock the underlying client to throw (not just resolve failure) | call `dispatchNotification` | still resolves normally, `Notification.status: 'FAILED'` — confirms the swallow is unconditional, not narrowed to only the `{ success: false }` resolve path |
+| **[Phase 4 — Review §6.1] Decision record — dispatchNotification is not itself idempotent; guards live at each call site** | mock two calls with identical `(userId, type, payload)` | call `dispatchNotification(userId, type, payload)` twice | **by design**, both calls succeed and create two independent `Notification` rows (and, if delivery succeeds both times, two real sends) — this function's signature (Doc 8-1) has no dedupe key, and inventing an implicit one here (e.g. hashing `payload`) would silently mask genuinely-distinct same-shaped notifications (e.g. two separate `NEW_MESSAGE` events with identical short text). Review §6.1 names "notification dispatch" as a double-fire risk to guard against; this suite resolves that by requiring each *caller* that can plausibly invoke this function twice for one logical event — a retried webhook handler, a retried job — to own its own dedupe check **before** calling `dispatchNotification`, the same way `payment.service.handleChapaWebhook` (9-7) checks `Payment.status` before doing anything (including notifying) a second time. This test exists to make the boundary decision explicit and prevent a future contributor from "fixing" this function into a dedupe behavior that would just move the ambiguity, not resolve it |
 
 #### listForUser
 
@@ -440,6 +453,8 @@ FRs: FR-SC-001, FR-AD-015.
 
 - [ ] The "identifier not found" and "wrong password" cases in `login` assert the **identical** `ApiError` object shape (status + message), not just "both return roughly 401-ish" — this is the case Doc 8-1 flags as easiest to subtly break.
 - [ ] The timing-hardening case (`bcrypt.compare` still runs on a not-found identifier) is asserted via a spy on the call itself, not inferred from the error message alone.
+- [ ] **[Phase 4]** The `LOGIN_FAILED_THRESHOLD` audit entry is tested as firing exactly once the threshold is crossed, not on every failed attempt below it — a test that fires it unconditionally on every 401 would pass the happy-path assertion while producing unusable log volume in production.
+- [ ] **[Phase 4]** `dispatchNotification`'s not-idempotent-by-design decision is treated as a positive, asserted behavior (two calls → two rows) — not silently reinterpreted later as a bug and "fixed" without updating this doc and the call sites that depend on the current contract.
 - [ ] `requestPasswordReset`'s matching-vs-non-matching cases assert **identical outward behavior**, including when the downstream provider fails — a test that only checks the happy path would miss a response-shape leak on provider failure.
 - [ ] `notification.service.dispatchNotification`'s error-swallowing is tested by making the mocked provider client actually throw/fail, not by asserting the function's return type merely allows success.
 - [ ] `markRead`'s 403 (wrong owner) and 404 (not found) cases are tested as genuinely distinct branches, not collapsed into one generic "can't mark read" test — this is the project's canonical IDOR check and deserves its own explicit case.
@@ -455,7 +470,7 @@ FRs: FR-SC-001, FR-AD-015.
 - **`src/jobs/scheduler.ts` and the interval-registration wrapper in `notificationRetry.job.ts`** — no business logic of their own (Doc 8-1); the logic they call is already covered via `notification.service.test.ts`'s `retryFailed` cases directly.
 - **Real Geez SMS / Brevo network behavior** — `sms.client.ts`/`email.client.ts` are unit-tested against a mocked HTTP layer only; actual provider auth, deliverability, and response-shape drift need a manual or separately-tracked integration pass.
 - **Real bcrypt/JWT cryptographic strength** (cost factor tuning, key rotation) — unit tests confirm the functions are *called* correctly and produce internally-consistent results; production-grade parameter choices (bcrypt rounds, `JWT_SECRET` length/entropy, key rotation policy) are a security-review/config concern, not a unit-test assertion.
-- **In-memory rate-limit behavior under production load** — `rateLimiter.middleware.test.ts` exercises the real in-memory store directly, but per-process counter correctness under concurrent multi-instance traffic (should the platform ever scale horizontally) is a load-test/staging concern, not a unit-test assertion. Server-side rate limiting itself is no longer an open item (Doc 02 NFR-013, resolved) — see the `rateLimiter.middleware.ts` and `login`/`resendVerification`/`requestPasswordReset` test cases above.
+- **In-memory rate-limit behavior under production load** — `rateLimiter.middleware.test.ts` exercises the real in-memory store directly, but per-process counter correctness under concurrent multi-instance traffic (should the platform ever scale horizontally) is a load-test/staging concern, not a unit-test assertion. Server-side rate limiting itself is no longer an open item (Doc 02 NFR-013, resolved) — see the `rateLimiter.middleware.ts` and `login`/`resendVerification`/`requestPasswordReset` test cases above. **Decision record (Phase 0, testing-redesign):** the frontend test doc (`frontend/9-1-shared-config.md` §9.10) previously and incorrectly claimed this was still an open gap, mirroring nothing that's actually true here. That was a documentation error in the frontend doc, now corrected — this backend doc's claim stands as written: NFR-013 is resolved, with real per-endpoint limits (login 5/15min, resend-verification 3/hour, forgot-password 3/hour, payment initiation 10/hour, messaging 30/min) enforced by `rateLimiter.middleware.ts` and covered by the test cases above.
 - **CSRF** — not applicable in the traditional sense; this is a stateless Bearer-JWT API with no cookie-based session, so CSRF tokens are out of scope by design, not by oversight.
 
 ---

@@ -4,6 +4,8 @@
 
 **Depends on:** Matching & Cohorts (hard).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -20,14 +22,14 @@
 
 ### 9.1 Test File Map
 
-| Source file | Test file | Notes |
-|---|---|---|
-| src/hooks/useMessaging.ts | tests/hooks/useMessaging.test.ts | mandatory — full blocks below |
-| src/hooks/useAdminMessaging.ts | tests/hooks/useAdminMessaging.test.ts | mandatory |
-| src/pages/MessagingPage.tsx | tests/pages/MessagingPage.test.tsx | non-trivial: zero/one/many-cohort branching |
-| src/components/MessageThreadView.tsx | tests/components/MessageThreadView.test.tsx | non-trivial: identity-display rule, 403 handling — full block below |
-| src/components/MessageComposer.tsx | tests/components/MessageComposer.test.tsx | non-trivial: closed-thread gate, no-attachment guarantee — full block below |
-| src/pages/admin/MessageThreadReviewPage.tsx | tests/pages/MessageThreadReviewPage.test.tsx | non-trivial: required-reason close action |
+| Source file | Test file | Test type | Notes |
+|---|---|---|---|
+| src/hooks/useMessaging.ts | tests/hooks/useMessaging.test.ts | Hook | mandatory — full blocks below |
+| src/hooks/useAdminMessaging.ts | tests/hooks/useAdminMessaging.test.ts | Hook | mandatory |
+| src/pages/MessagingPage.tsx | tests/pages/MessagingPage.test.tsx | Component | non-trivial: zero/one/many-cohort branching |
+| src/components/MessageThreadView.tsx | tests/components/MessageThreadView.test.tsx | Component | non-trivial: identity-display rule, 403 handling — full block below |
+| src/components/MessageComposer.tsx | tests/components/MessageComposer.test.tsx | Component | non-trivial: closed-thread gate, no-attachment guarantee — full block below |
+| src/pages/admin/MessageThreadReviewPage.tsx | tests/pages/MessageThreadReviewPage.test.tsx | Component | non-trivial: required-reason close action |
 
 ---
 

@@ -76,6 +76,7 @@ This becomes `prisma/schema.prisma` (or equivalent ORM schema) almost line for l
 | Support & Trust | PolicyDocument | Versioned content for Privacy/Terms/Safety/Refund/Rules pages |
 | Support & Trust | PromotionCode | An Admin-defined promotional discount |
 | Notifications | Notification | One notification sent to one User through one channel |
+| Cross-Cutting | AuditLog | An append-only record of a money/PII/admin-trust-relevant action, for compliance and dispute review |
 
 ---
 
@@ -132,7 +133,9 @@ Only one of `studentProfile` / `parentProfile` / `tutorProfile` is ever populate
 
 **Traces to:** FR-SP-007–010, FR-AC-002–005, FR-AC-008. UC-06, UC-13, UC-09.
 
-`accountStatus = GUARDIAN_REQUIRED_HOLD` is the state introduced by FR-AC-008 — access is paused (enforced at the application layer against every booking/class-access check) but no related row anywhere in this schema is deleted when a student enters this state.
+`accountStatus = GUARDIAN_REQUIRED_HOLD` is the state introduced by FR-AC-008 — access is paused but no related row anywhere in this schema is deleted when a student enters this state.
+
+**Gap closed — named enforcement point.** Earlier drafts of this document said the hold is "enforced at the application layer against every booking/class-access check" without naming a function, which left three independent implementers free to enforce it three different ways (or not at all). This is now closed: the single enforcement point is `accounts-guardianship`'s exported `studentProfile.service.ts → assertAccountStatusAllowsAccess(studentId: string): Promise<void>`, which throws `ApiError(403, "This student's account is on hold pending a guardian — booking and class access are unavailable until a guardian is linked")` whenever `StudentProfile.accountStatus !== 'ACTIVE'`, and resolves silently otherwise. Every booking-entry function in `matching-cohorts` (`selectTutor`, `triggerNoExactMatch`, `requestGroupFormat`) and every session-access function in `class-delivery-library` (`session.service.ts → assertSessionAccessAllowed`, which `GET /sessions` and `GET /sessions/:sessionId` call before returning session data) calls this function first and lets its `ApiError` propagate unmodified. See `08-function-level-specification/backend/8-2-accounts-guardianship.md`, `8-3-matching-cohorts.md`, and `8-4-class-delivery-library.md` for the call sites.
 
 ---
 
@@ -177,6 +180,8 @@ While `onboardingStatus = PENDING`, the application layer restricts this parent 
 **Traces to:** FR-TU-001–005. UC-15, UC-16, UC-18.
 
 No grade-range field exists here or anywhere else on this entity, consistent with FR-TU-006's confirmation that a ranked subject applies across the full Grade 1–12 span.
+
+**Issue 2 fix — resubmission reuses the existing `verificationStatus`/`verifiedAt`/`verifiedById` fields; no new column.** UC-18's alternate flow ("may resubmit with corrected information") previously had no named mechanism to move a `REJECTED` tutor back to `PENDING` (flagged in `10-e2e-specification.md §10.8` and `09-test-file-specification/phase7-review-signoff.md`). Resolved via `POST /tutors/me/resubmit-verification` → `tutorProfile.service.ts → resubmitVerification` (`08-function-level-specification/backend/8-2-accounts-guardianship.md`), which sets `verificationStatus: PENDING` and resets `verifiedAt`/`verifiedById` to `null`. This is a `REJECTED → PENDING` transition only — no schema change was needed.
 
 **M6 fix — `uniqueStudentsTaught`, canonically defined here.** This value is referenced by name across `06-api/03-matching-cohorts-api.md` (tutor recommendation cards), `08-function-level-specification/backend/8-3-matching-cohorts.md`, and `06-api/08-support-trust-admin-api.md` (H5's tutor-performance report), but no prior draft of this data model ever defined where it actually comes from — leaving it ambiguous whether it's a stored counter column or computed on read, which three different implementers could easily resolve three different ways. Settled here: **it is never a stored column on `TutorProfile`.** It is always computed as `COUNT(DISTINCT studentId)` over that tutor's `CohortMembership` rows with `status: COMPLETED` or `ACTIVE` (i.e. every student the tutor has ever actually taught, not just been matched with — a `CohortMembership` that never progressed past a cancelled/pre-payment state does not count). Every endpoint that surfaces this value (`GET /matching/tutors/:tutorId` recommendation detail, `GET /admin/reports/tutor-performance`) computes it fresh via this same aggregate — there is no `uniqueStudentsTaught` column in the Prisma schema, and no code path should ever attempt to increment/decrement one. `uniqueStudentsTaught` is the one and only name for this value platform-wide — no endpoint, DTO, or UI label should call it `totalStudentsTaught`, `studentCount`, or any other variant.
 
@@ -877,7 +882,7 @@ No `rating`-derived criteria field exists anywhere on this entity — `criteriaD
 | reporterId | String | FK → User.id, required | |
 | relatedCohortId | String? | FK → Cohort.id, nullable | |
 | relatedSessionId | String? | FK → ScheduledSession.id, nullable | |
-| relatedPaymentId | String? | FK → PaymentRecord.id, nullable | |
+| relatedPaymentId | String? | FK → Payment.id, nullable | |
 | relatedThreadId | String? | FK → MessageThread.id, nullable | |
 | category | Enum (ComplaintCategory) | required | `SESSION_ISSUE \| TUTOR_CONDUCT \| PAYMENT_ISSUE \| MESSAGE_ISSUE \| OTHER` |
 | description | String | required | |
@@ -886,7 +891,7 @@ No `rating`-derived criteria field exists anywhere on this entity — `criteriaD
 | resolvedAt | DateTime? | nullable | |
 | createdAt | DateTime | default now() | |
 
-**Relations:** `reporter` (many → one User), `relatedCohort` (many → one Cohort, nullable), `relatedSession` (many → one ScheduledSession, nullable), `relatedPayment` (many → one PaymentRecord, nullable), `relatedThread` (many → one MessageThread, nullable), `resolvedBy` (many → one User, nullable).
+**Relations:** `reporter` (many → one User), `relatedCohort` (many → one Cohort, nullable), `relatedSession` (many → one ScheduledSession, nullable), `relatedPayment` (many → one Payment, nullable), `relatedThread` (many → one MessageThread, nullable), `resolvedBy` (many → one User, nullable).
 
 **Tutor resolution:** ComplaintReport has no direct tutor FK. For `TUTOR_CONDUCT` complaints (and for computing `complaintCount` in the tutor-performance report), the tutor is derived at query time: `relatedCohortId → Cohort.tutorId`, falling back to `relatedSessionId → ScheduledSession → Cohort.tutorId` when only a session is linked. A `TUTOR_CONDUCT` complaint must therefore be filed with `relatedCohortId` and/or `relatedSessionId` set — enforced alongside the existing "at least one related entity unless OTHER" rule in 06-api/08-support-trust-admin-api.md §8.2 `POST /complaints`.
 
@@ -990,9 +995,29 @@ This is the platform-wide canonical list — no endpoint, job, or service should
 
 ---
 
+##### AuditLog
+
+**Issue 5 fix — stub entity added to close the Doc 04/Doc 09 sync gap.** `09-test-file-specification/00-agent-rules.md` (Rule 10) and roughly ten test files across `shared-config`, `accounts-guardianship`, and `payments-earnings` already assert against a real `AuditLog` store for money/PII/admin-trust actions, using the call shape `auditLog.service.record({ actor, action, target, timestamp })` — but no `AuditLog` entity existed anywhere in this document. That test-doc convention is treated as the source of truth for the shape below; nothing here overrides it.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | String (UUID) | PK, default uuid() | |
+| actor | String | FK → User.id, required | The user who performed the action (Admin in most cases, but any role for e.g. a tutor's own rejected-verification event) |
+| action | String | required | Short, past-tense, upper-snake-case tag (`REFUND_APPROVED`, `REFUND_REJECTED`, `GUARDIAN_REMOVED`, `TUTOR_REJECTED`, `LOGIN_FAILED_THRESHOLD`, `DISPUTE_RESOLVED`, `ACCOUNT_SUSPENDED`, etc.) — `00-agent-rules.md`'s convention is the canonical list; a new audit-logged mutation adds its value there, not just in code |
+| target | String | required, no FK | The id of whatever entity the action mutated. Deliberately untyped/no foreign key: a single `AuditLog` row's target may be a `Refund`, a `ParentStudentRelationship`, a `TutorProfile`, a `User`, etc., and a polymorphic FK isn't worth the schema complexity for a write-once, rarely-joined log |
+| timestamp | DateTime | default now() | |
+
+**Relations:** `actorUser` (many → one User, via `actor`). No relation to `target` — see above.
+
+**Traces to:** `09-test-file-specification/00-agent-rules.md` Rule 10 (the requirement); FR-AD-001/002/003/017, FR-AC-007/008 (the specific actions already asserted against this shape in Doc 09).
+
+**Open implementation question, deliberately left open here (per `00-agent-rules.md`'s own note):** whether `AuditLog` is a Prisma model, a structured log sink, or both, is a decision the code makes, not this schema doc — this stub only fixes the "the entity doesn't exist anywhere in Doc 04" inconsistency Issue 5 flagged. If the eventual implementation is Prisma-backed, this table is the schema; if it's a log sink instead, this table still stands as the documented shape any sink must match.
+
+---
+
 ### 4.3 ER Diagrams
 
-Given the scale of this domain (40 entities across 10 sub-domains, vs. the reference project's 9), a single combined diagram would be unreadable. The relationships are instead split into four diagrams along the same domain groupings used in Section 4.2 — every foreign key above appears in exactly one of the four.
+Given the scale of this domain (41 entities across 10 sub-domains, vs. the reference project's 9), a single combined diagram would be unreadable. The relationships are instead split into four diagrams along the same domain groupings used in Section 4.2 — every foreign key above appears in exactly one of the four, with the sole exception of `AuditLog`, which is intentionally omitted from all four: it can reference any entity in any diagram as its untyped `target`, so drawing it into one specific diagram would misleadingly suggest it only logs actions from that domain.
 
 #### 4.3.1 Identity, Guardianship & Tutor Setup
 

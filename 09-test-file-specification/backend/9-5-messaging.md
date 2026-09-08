@@ -6,6 +6,10 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 **Owns:** MessageThread, Message. **Depends on:** `matching-cohorts` (hard) — a `MessageThread` is 1:1 with a `Cohort`.
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -25,10 +29,10 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/schemas/messaging.schema.ts | tests/schemas/messaging.schema.test.ts | Unit | ☐ |
 | src/services/messaging.service.ts | tests/services/messaging.service.test.ts | Unit (mocked Prisma, mocked `notification.service.dispatchNotification`) | ☐ |
 | src/controllers/messaging.controller.ts | tests/controllers/messaging.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/messaging.routes.ts | tests/routes/messaging.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/messaging.routes.ts | tests/routes/messaging.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/adminMessaging.service.ts | tests/services/adminMessaging.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/adminMessaging.controller.ts | tests/controllers/adminMessaging.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/adminMessaging.routes.ts | tests/routes/adminMessaging.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/adminMessaging.routes.ts | tests/routes/adminMessaging.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/jobs/archiveMessageThreads.job.ts | — | Underlying logic covered via `messaging.service.test.ts`'s archived-thread-still-readable case; the interval-registration wrapper itself is excluded per the standing convention | — |
 
 ---

@@ -402,7 +402,7 @@
 2. Admin approves the tutor, making them visible and matchable to students.
 
 **Alternate / error flows:**
-- Admin rejects the application: tutor is notified and remains invisible to students; may resubmit with corrected information.
+- Admin rejects the application: tutor is notified and remains invisible to students; may resubmit with corrected information — tutor edits their profile via `PATCH /tutors/me/profile`, then calls `POST /tutors/me/resubmit-verification` to re-enter the pending queue (Issue 2 fix).
 
 **Postcondition (success):** Only Admin-verified tutors ever appear in student-facing matching or search.
 

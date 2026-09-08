@@ -4,6 +4,8 @@
 
 **Depends on:** Accounts & Guardianship (hard); soft-integrates with Class Delivery & Library (server-side XP trigger only — no client-facing coupling, per 8-6).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -22,20 +24,20 @@
 
 ### 9.1 Test File Map
 
-| Source file | Test file | Notes |
-|---|---|---|
-| src/hooks/useGamification.ts | tests/hooks/useGamification.test.ts | mandatory (plain reads — per 8-6's note, no full block needed beyond the query-key/params table) |
-| src/hooks/useAdminGamification.ts | tests/hooks/useAdminGamification.test.ts | mandatory |
-| src/hooks/useChallenges.ts | tests/hooks/useChallenges.test.ts | mandatory |
-| src/pages/student/AchievementsPage.tsx | tests/pages/AchievementsPage.test.tsx | non-trivial: Student-vs-Parent studentId resolution — full block below |
-| src/components/StreakFlame.tsx | tests/components/StreakFlame.test.tsx | non-trivial: must not conflate streak reset with lost XP — full block below |
-| src/components/XPProgressBar.tsx | — | purely cosmetic level derivation, no server reconciliation — see §9.8 |
-| src/components/BadgeGrid.tsx | — | presentational list + `EmptyState`; folded into `AchievementsPage`'s test, no separate file |
-| src/pages/student/LeaderboardPage.tsx | tests/pages/LeaderboardPage.test.tsx | non-trivial: period toggle, Parent child-selector |
-| src/components/LeaderboardTable.tsx | tests/components/LeaderboardTable.test.tsx | non-trivial: privacy-relevant display-name rule — full block below |
-| src/pages/student/ChallengesPage.tsx, components/ChallengeCard.tsx | tests/components/ChallengeCard.test.tsx | non-trivial: cross-referencing two lists, progress freeze after completion |
-| src/pages/admin/BadgeManagementPage.tsx | tests/pages/BadgeManagementPage.test.tsx | non-trivial: category filter |
-| src/pages/admin/ChallengeManagementPage.tsx | tests/pages/ChallengeManagementPage.test.tsx | non-trivial: `endsAt > startsAt` validation |
+| Source file | Test file | Test type | Notes |
+|---|---|---|---|
+| src/hooks/useGamification.ts | tests/hooks/useGamification.test.ts | Hook | mandatory (plain reads — per 8-6's note, no full block needed beyond the query-key/params table) |
+| src/hooks/useAdminGamification.ts | tests/hooks/useAdminGamification.test.ts | Hook | mandatory |
+| src/hooks/useChallenges.ts | tests/hooks/useChallenges.test.ts | Hook | mandatory |
+| src/pages/student/AchievementsPage.tsx | tests/pages/AchievementsPage.test.tsx | Component | non-trivial: Student-vs-Parent studentId resolution — full block below |
+| src/components/StreakFlame.tsx | tests/components/StreakFlame.test.tsx | Component | non-trivial: must not conflate streak reset with lost XP — full block below |
+| src/components/XPProgressBar.tsx | — | — | purely cosmetic level derivation, no server reconciliation — see §9.8 |
+| src/components/BadgeGrid.tsx | — | — | presentational list + `EmptyState`; folded into `AchievementsPage`'s test, no separate file |
+| src/pages/student/LeaderboardPage.tsx | tests/pages/LeaderboardPage.test.tsx | Component | non-trivial: period toggle, Parent child-selector |
+| src/components/LeaderboardTable.tsx | tests/components/LeaderboardTable.test.tsx | Component | non-trivial: privacy-relevant display-name rule — full block below |
+| src/pages/student/ChallengesPage.tsx, components/ChallengeCard.tsx | tests/components/ChallengeCard.test.tsx | Component | non-trivial: cross-referencing two lists, progress freeze after completion |
+| src/pages/admin/BadgeManagementPage.tsx | tests/pages/BadgeManagementPage.test.tsx | Component | non-trivial: category filter |
+| src/pages/admin/ChallengeManagementPage.tsx | tests/pages/ChallengeManagementPage.test.tsx | Component | non-trivial: `endsAt > startsAt` validation |
 
 ---
 

@@ -4,6 +4,8 @@
 
 **Depends on:** Shared Config, Messaging, Class Delivery & Library (hard); soft-integrates with Payments & Earnings and Accounts & Guardianship (server-side-only effects, no direct client-side call — see §9.4).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -21,16 +23,16 @@
 
 ### 9.1 Test File Map
 
-| Source file | Test file | Notes |
-|---|---|---|
-| src/hooks/useComplaints.ts | tests/hooks/useComplaints.test.ts | mandatory — full block below |
-| src/hooks/useAdminDisputes.ts | tests/hooks/useAdminDisputes.test.ts | mandatory — full block below |
-| src/hooks/useAdminReporting.ts | tests/hooks/useAdminReporting.test.ts | mandatory |
-| src/pages/SubmitComplaintPage.tsx, components/ComplaintForm.tsx | tests/components/ComplaintForm.test.tsx | non-trivial: business-rule-mirroring submit gate — full block below |
-| src/pages/SupportContactPage.tsx | tests/pages/SupportContactPage.test.tsx | non-trivial: deliberately not a form — negative-assertion test |
-| src/pages/admin/DisputeQueuePage.tsx | tests/pages/DisputeQueuePage.test.tsx | non-trivial: two-pane list+detail state coordination |
-| src/components/DisputeCard.tsx | tests/components/DisputeCard.test.tsx | non-trivial: H4 fix (computed refund preview) + conditional option-disabling — full block below |
-| src/pages/admin/PlatformReportsPage.tsx, components/PlatformStatsGrid.tsx | tests/pages/PlatformReportsPage.test.tsx | non-trivial: freshness timestamp, H5 fix (tutor-performance table) |
+| Source file | Test file | Test type | Notes |
+|---|---|---|---|
+| src/hooks/useComplaints.ts | tests/hooks/useComplaints.test.ts | Hook | mandatory — full block below |
+| src/hooks/useAdminDisputes.ts | tests/hooks/useAdminDisputes.test.ts | Hook | mandatory — full block below |
+| src/hooks/useAdminReporting.ts | tests/hooks/useAdminReporting.test.ts | Hook | mandatory |
+| src/pages/SubmitComplaintPage.tsx, components/ComplaintForm.tsx | tests/components/ComplaintForm.test.tsx | Component | non-trivial: business-rule-mirroring submit gate — full block below |
+| src/pages/SupportContactPage.tsx | tests/pages/SupportContactPage.test.tsx | Component | non-trivial: deliberately not a form — negative-assertion test |
+| src/pages/admin/DisputeQueuePage.tsx | tests/pages/DisputeQueuePage.test.tsx | Component | non-trivial: two-pane list+detail state coordination |
+| src/components/DisputeCard.tsx | tests/components/DisputeCard.test.tsx | Component | non-trivial: H4 fix (computed refund preview) + conditional option-disabling — full block below |
+| src/pages/admin/PlatformReportsPage.tsx, components/PlatformStatsGrid.tsx | tests/pages/PlatformReportsPage.test.tsx | Component | non-trivial: freshness timestamp, H5 fix (tutor-performance table) |
 
 ---
 

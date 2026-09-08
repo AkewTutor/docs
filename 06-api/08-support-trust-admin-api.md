@@ -23,6 +23,7 @@
 | PATCH | /admin/disputes/:complaintId | Admin | UC-87 (resolution may invoke UC-83 refund, UC-78 suspension) | FR-AD-017 |
 | GET | /support/contact | Public | UC-67, UC-69 | FR-SP-043, FR-TU-023, FR-PB-006 |
 | GET | /admin/reports/platform-health | Admin | UC-90, UC-91 | FR-AD-020, FR-AD-021, FR-AD-022 |
+| GET | /admin/reports/activity | Admin | UC-91 | FR-AD-021 |
 | GET | /admin/reports/tutor-performance | Admin | UC-91 | FR-AD-022 |
 
 ---

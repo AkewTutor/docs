@@ -6,6 +6,12 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 **Owns:** MatchRequest, TutorExclusion, Cohort, CohortMembership, FormatSwitchRequest. **Depends on:** `accounts-guardianship` (hard).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
+**Integration (persistence) tier for this module lives in a sibling file:** see `9-3-matching-cohorts-persistence.md` (added Phase 5.1) for cohort creation, membership assignment, and capacity/claim enforcement tested against a real database.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -26,17 +32,17 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/schemas/matching.schema.ts | tests/schemas/matching.schema.test.ts | Unit | ☐ |
 | src/services/matching.service.ts | tests/services/matching.service.test.ts | Unit (mocked Prisma, mocked `cohort.service`) | ☐ |
 | src/controllers/matching.controller.ts | tests/controllers/matching.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/matching.routes.ts | tests/routes/matching.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/matching.routes.ts | tests/routes/matching.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/cohort.service.ts | tests/services/cohort.service.test.ts | Unit (mocked Prisma, mocked `adminMatching.service` for handoff calls) | ☐ |
 | src/controllers/cohort.controller.ts | tests/controllers/cohort.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/cohort.routes.ts | tests/routes/cohort.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/cohort.routes.ts | tests/routes/cohort.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/adminMatching.service.ts | tests/services/adminMatching.service.test.ts | Unit (mocked Prisma, mocked `cohort.service`, `notification.service`) | ☐ |
 | src/controllers/adminMatching.controller.ts | tests/controllers/adminMatching.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/adminMatching.routes.ts | tests/routes/adminMatching.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/adminMatching.routes.ts | tests/routes/adminMatching.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/formatSwitch.schema.ts | tests/schemas/formatSwitch.schema.test.ts | Unit | ☐ |
 | src/services/formatSwitch.service.ts | tests/services/formatSwitch.service.test.ts | Unit (mocked `cohort.service`, `matching.service`, `refund.service`) | ☐ |
 | src/controllers/formatSwitch.controller.ts | tests/controllers/formatSwitch.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/formatSwitch.routes.ts | tests/routes/formatSwitch.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/formatSwitch.routes.ts | tests/routes/formatSwitch.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/jobs/groupFormationWindow.job.ts | — | Underlying close-and-form logic covered via `cohort.service.test.ts`'s partial-formation case; interval wrapper excluded | — |
 | src/jobs/zeroMatchEscalation.job.ts | — | Underlying escalation logic covered via `matching.service.test.ts`; interval wrapper excluded | — |
 | src/jobs/staleApproval.job.ts | — | Underlying flagging logic covered via `adminMatching.service.test.ts`; interval wrapper excluded | — |
@@ -88,6 +94,18 @@ FRs: FR-MA-001–002, FR-MA-007, FR-MA-012, FR-MA-016–018, FR-SP-025, FR-TU-00
 | Creates a SEARCHING MatchRequest on first call | mock no existing `MatchRequest` | call `recommendTutorsWithMatchPercent(...)` | a new `MatchRequest(status: SEARCHING)` is created |
 | Reuses an existing MatchRequest on a subsequent call | mock an existing `SEARCHING` `MatchRequest` for the caller | call `recommendTutorsWithMatchPercent(...)` again | no duplicate `MatchRequest` row is created — the existing one is reused/updated |
 | Zero recommendations reports zeroMatchSince from the MatchRequest row | mock zero qualifying tutors; mock `MatchRequest.zeroMatchSince` already set by the job | call `recommendTutorsWithMatchPercent(...)` | resolves `{ recommendations: [], zeroMatchSince: <timestamp> }` — this function reads, but never itself computes, the 48-hour threshold |
+| **[Phase 4 — Review §6.1] Schedule-overlap scoring is stable across a DST transition** | mock a student `AvailabilitySlot` and a tutor `AvailabilitySlot` expressed as UTC-offset wall-clock windows that fall either side of a DST transition date in a DST-observing zone (e.g. a diaspora parent/tutor whose client reports times in `America/New_York` rather than `Africa/Addis_Ababa`, which itself never observes DST) | call `recommendTutorsWithMatchPercent(...)` for a request spanning the transition date | the computed `scheduleOverlapScore` is identical to the equivalent non-transition week — the overlap comparison is done on the stored UTC instants, never on a re-derived local wall-clock offset that would silently shift by an hour and under- or over-count overlapping slots |
+| **[Phase 4 — Review §6.1] Overlap computation never assumes the platform's own server timezone** | mock the Node process `TZ` env var to a non-UTC value (e.g. `Africa/Addis_Ababa` vs. `UTC`) | call `recommendTutorsWithMatchPercent(...)` with identical `AvailabilitySlot` UTC timestamps under both process timezones | `scheduleOverlapScore` is byte-for-byte identical in both runs — a regression here would mean match quality silently depends on which server the code happens to run on |
+
+#### injection.test.ts — **[Phase 4 — Review §6.4, OWASP A03:2021]**
+
+FRs: (security hardening, no new FR). Targets the one free-text filter on this file's search surface: `searchOneToOneTutors`'s `language` query param (`06-api/03-matching-cohorts-api.md`'s `GET /matching/tutors/search?...&language=string`).
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Regex-DoS payload in `language` does not hang the query | mock the Prisma layer as usual (this is a Unit test — the string never reaches a real DB here) | call `searchOneToOneTutors(..., { language: "(a+)+$" })` (a catastrophic-backtracking-shaped string) | resolves/rejects within the test's normal timeout — asserts the filter is passed to Prisma as an exact/case-insensitive-equality or parameterized `contains` match, never compiled into an application-level `RegExp` against the raw input |
+| Operator-injection-shaped string is treated as a literal value, not a Prisma operator | — | call `searchOneToOneTutors(..., { language: '{"$ne": null}' })` and `searchOneToOneTutors(..., { language: "'; DROP TABLE" })` | in both cases, the query filters for tutors whose language literally equals that string (yielding zero results against any realistic fixture set) — the string is never parsed/merged into the Prisma `where` clause as structured input; a test asserting "zero tutors returned, no exception thrown" is not sufficient on its own — this test also inspects the constructed Prisma filter object/mock call args to confirm the raw string landed in a scalar `equals`/`contains` position, not spread into the where-clause shape |
+| Overly long `language` string does not bypass validation before reaching this function | mock `searchTutorsQuerySchema` as the real schema, not bypassed | parse `{ query: { subjectId: uuid, grade: '9', language: 'x'.repeat(5000) } }` | rejected at the schema layer (9.2) before this service function is ever called — cross-referenced, not re-asserted here, to confirm the length guard is a schema-level responsibility and this service doesn't also need its own redundant length check |
 
 #### selectTutor
 
@@ -113,6 +131,7 @@ FRs: FR-MA-001–002, FR-MA-007, FR-MA-012, FR-MA-016–018, FR-SP-025, FR-TU-00
 | 1-to-1 caller rejected | mock caller `formatPreference: ONE_TO_ONE` | call `requestGroupFormat(...)` | throws `ApiError(400, "Use /matching/select-tutor or /matching/no-exact-match for the 1-to-1 format")` |
 | Response never includes tutorId, matchPercentage, or any profile field | mock a successful call | call `requestGroupFormat(...)` | assert the resolved object has **only** `matchRequestId`/`status` keys — a deliberately smaller DTO shape, not a full object with hidden fields the client is merely told not to render (API spec §3.2's no-match-information rule for group formats — this must be enforced server-side) |
 | Actual grouping does not happen synchronously in this call | spy on `cohort.service.formOrJoinCohort` | call `requestGroupFormat(...)` | assert `formOrJoinCohort` is **not** called directly from within this function — Doc 8-3 states grouping is invoked by a separate matching/scheduling process, not synchronously here; a test asserting it IS called here would be testing an incorrect coupling |
+| **Blocked by the guardian-hold gate, checked before the format-preference check (gap closed)** | mock `assertAccountStatusAllowsAccess` to throw `ApiError(403, ...)`; caller `formatPreference: ONE_TO_ONE` (which would otherwise independently throw a `400`) | call `requestGroupFormat(callerId, 'STUDENT', studentId, subjectId)` | the `403` from the gate is what actually throws, not the `400` format-preference error — proves call order, since either error alone would make this case ambiguous |
 
 #### Status read path (getMyRequestStatus / getTutorDetail)
 
@@ -152,6 +171,8 @@ FRs: FR-MA-006, FR-MA-009, FR-MA-011, FR-MA-016, Section 7 partial-formation, Se
 | Creates a new cohort when none compatible exists | mock no compatible `FORMING` cohort | call `formOrJoinCohort(matchRequestId)` | creates a new `Cohort`, sets `groupFormationWindowExpiresAt` = now + 48h (Admin-configurable default) |
 | Never sets or touches any pricing field | spy on the `Cohort`/`CohortMembership` create/update calls | call `formOrJoinCohort(matchRequestId)` for a 1-to-5 request that ends up at partial size | assert no `pricePerStudentPerHour`/`amount`-shaped field appears anywhere in this function's writes — pricing is a `payments-earnings` concern entirely, confirming the boundary Doc 8-3 explicitly draws |
 | Cohort reaching target size resolves FULL | mock a cohort at `groupSize - 1`, this call is the final join | call `formOrJoinCohort(matchRequestId)` | resolves `status: 'FULL'` |
+| **[Phase 4 — Review §6.1] Last-seat race is caught by a conditional write, not a read-then-write gap** | mock the initial read showing 1 seat remaining (as in the case above), but mock the actual `CohortMembership`-creating write (a conditional `updateMany`/`update` guarded by a `WHERE currentSize < groupSize`-style clause, or the DB unique/check constraint it relies on) to report **zero rows affected** — simulating a second caller having already taken the last seat between this call's read and write | call `formOrJoinCohort(matchRequestId)` | throws `ApiError(409, "This cohort is no longer accepting members — please search again")` (or the implementer's equivalent conflict message) rather than resolving success on a cohort that is actually already full; this is a Unit-tier test of the guard-clause *branch*, exercised against a mocked, sequential Prisma call — it is not a substitute for a genuine concurrent-request test, which remains a load/DB-level concern out of scope for this suite (see §9.13) |
+| **[Phase 4 — Review §6.1] The conditional-write guard is what's asserted, not merely the final row count** | spy on the exact Prisma call shape used for the size-check-and-join write | call `formOrJoinCohort(matchRequestId)` for the successful path (the case above) | assert the write includes a size/capacity condition in its `WHERE` clause (or equivalent transaction-level check) rather than a separate unguarded `findUnique` (check) followed by an unconditional `update` (write) — the two-step read-then-write pattern is exactly what a real concurrent request can interleave inside, and a test that only mocks the happy path would never catch a regression back to that pattern |
 
 #### approveCohort / rejectCohort
 
@@ -237,6 +258,8 @@ FRs: FR-MA-003–004, FR-MA-008, FR-MA-010, FR-MA-013–015, FR-MA-017, FR-AD-00
 | Split cohorts' sessionsPerWeek are independently derived, not copied | mock tutorX's matched slots yield 3 sessions/week, tutorY's yield 1 session/week, original cohort had `sessionsPerWeek: 2` | call both `manuallyAssembleGroup` calls | resulting cohorts have `sessionsPerWeek: 3` and `sessionsPerWeek: 1` respectively — neither equals the original `2`, confirming no copy-through occurs |
 | Illustrative split ratio is not a hard rule | mock a 5-student split into groups of 4 and 1 (not the illustrative 3-and-2) | call `manuallyAssembleGroup` with a 4/1 split across two calls | both succeed — Doc 02 §8 explicitly states the 3-and-2 example is illustrative, not a required grouping; a test asserting a specific split ratio is required would be over-constraining the spec |
 | Double-fail group assembly (both primary and secondary subject searches failed) reaches this function with no student-facing trigger | mock a `Path C` `MatchRequest` in `PENDING_ADMIN_ASSIGNMENT` from a double-fail (FR-MA-017), not from tutor-exit | call `manuallyAssembleGroup([id], tutorId, adminId)` | resolves the same `CohortAssignmentDTO` shape — this function handles both origins (double-fail and tutor-exit-split) identically, since both converge on the same `PENDING_ADMIN_ASSIGNMENT` `MatchRequest` state |
+| **[Phase 4 — Review §6.1] Two admins assigning the same MatchRequest concurrently — second call finds it already claimed** | mock a `MatchRequest` in `PENDING_ADMIN_ASSIGNMENT`; mock the assignment write (the step that flips the request's status away from `PENDING_ADMIN_ASSIGNMENT`) to report the row was **already** in a non-`PENDING_ADMIN_ASSIGNMENT` state at write time — simulating a second Admin's `manuallyAssignTutor`/`manuallyAssembleGroup` call for the same `matchRequestId` having already completed first | call `manuallyAssignTutor([matchRequestId], tutorId, adminId)` | throws `ApiError(409, "One or more of these requests have already been assigned")` — the write is a conditional status-transition (`WHERE status = 'PENDING_ADMIN_ASSIGNMENT'`), not a blind overwrite, so the second admin's call fails loudly instead of silently creating a second `Cohort` for a student already placed in one by the first call |
+| **[Phase 4 — Review §6.1] Partial-array claim conflict rejects the whole call, not just the already-claimed id** | mock 5 `matchRequestIds`, 4 still `PENDING_ADMIN_ASSIGNMENT`, 1 already claimed by a concurrent call | call `manuallyAssembleGroup([5 ids], tutorId, adminId)` | throws the same `ApiError(409, ...)` for the entire call — no partial `Cohort` is created from the 4 still-available requests; an Admin who hits this must re-fetch the queue (9.7's `listPendingApprovals`) and retry with the current set, rather than the system silently forming a smaller group than intended |
 
 ---
 
@@ -297,17 +320,20 @@ FRs: FR-SP-045–049.
 
 - [ ] Every branch of the match-percentage formula (subject-rank 40%, teaching-style 35% including the "no preference = neutral" case, schedule-overlap 25% with capping, and the round-half-up boundary at exactly `.5`) has its own isolated test with hand-computed expected output — not one end-to-end test that happens to produce a plausible-looking number.
 - [ ] The "hard filter fails → never enters scoring, never scores 0%" rule is tested by confirming the tutor is **absent from the array**, not present with a `matchPercentage: 0` — these are different bugs and only the array-membership assertion catches the second one.
+- [ ] **[Phase 4]** The seat-count and matching-queue concurrency guard tests assert the *conditional write shape* (a `WHERE`-guarded update/transaction), not just the resulting `409` — a test that only checks the thrown error would still pass against an implementation that got the right answer by accident (e.g. an unrelated validation error) rather than by the actual guard clause.
+- [ ] **[Phase 4]** The DST-transition schedule-overlap case is run against a genuinely DST-observing zone in the test environment, not against `Africa/Addis_Ababa` (which never observes DST and would make the test pass regardless of whether the underlying arithmetic is actually instant-based or wall-clock-based).
 - [ ] The Path A vs. Path C rejection re-routing (`TutorExclusion` written vs. not) is tested as two genuinely separate cases with separate setup, not inferred from one generic "rejection re-routes" test.
 - [ ] `tutorExitContinuity`'s fresh-`MatchRequest`-per-membership spawn is asserted by counting the actual created rows (5 for a 5-student cohort), not just asserting "some match requests were created."
 - [ ] The M3 group-split test explicitly asserts the two resulting cohorts have **independently-derived** `sessionsPerWeek` values that do **not** equal the original cohort's cadence — a test that only checks "two cohorts were created" would miss a regression where cadence was incorrectly copied through.
 - [ ] `getCohortMembers`'s profile-visibility split is tested via `not.toHaveProperty` for the omitted fields (`education`, `totalStudentsCount`, `matchPercentage`), not merely checking the fields aren't rendered by a client that was never under test.
 - [ ] `requestGroupFormat`'s no-match-information guarantee is tested against the actual resolved object's key set, not against documentation describing what the client is supposed to hide.
+- [ ] All three booking-entry functions (`selectTutor`, `triggerNoExactMatch`, `requestGroupFormat`) have a passing "blocked by the guardian-hold gate" case (**gap closed**), each confirming the gate runs before that function's own business-rule checks, not after.
 
 ---
 
 ### 9.13 Out of Scope for Automated Testing (and why)
 
-- **Real concurrent group-formation races** (two students joining the same near-full cohort simultaneously) — unit tests exercise `formOrJoinCohort`'s branching logic against mocked, sequential Prisma calls; genuine concurrency/locking behavior against a live database needs a separate load/concurrency test, not a Vitest unit suite.
+- **Real concurrent group-formation races** (two students joining the same near-full cohort simultaneously) — this Unit tier exercises `formOrJoinCohort`'s branching logic against mocked, sequential Prisma calls only. **Update (Phase 5.1):** the genuine two-way concurrent-access case (capacity is never exceeded under real simultaneous database access) is now covered in `9-3-matching-cohorts-persistence.md §9.16`, along with the equivalent race for `manuallyAssignTutor`'s admin-claim guard. What remains out of scope even after that addition is sustained, multi-client load testing beyond a two-way race — see that file's own §9.19 for the current boundary.
 - **`groupFormationWindow.job.ts`, `zeroMatchEscalation.job.ts`, `staleApproval.job.ts` interval scheduling** — the *effects* of each job are covered via the relevant service's test file (`cohort.service.test.ts`, `matching.service.test.ts`, `adminMatching.service.test.ts` respectively); the cron/interval registration itself is excluded per the standing convention.
 - **Admin-configurable 48-hour group-formation window value** — tests assume the documented 48-hour default; if/when Admin-configuration of this value ships, a dedicated test for the configurable-value path should be added at that time rather than guessed at here.
 - **Real notification delivery for rejection/format-switch/tutor-exit notices** — covered at the `dispatchNotification` call-site level (asserting it was called with the right non-disclosing payload); actual SMS/email/push delivery is `shared-config`'s concern (see `9-1-shared-config.md`).

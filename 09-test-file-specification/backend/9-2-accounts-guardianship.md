@@ -6,13 +6,19 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 **Owns:** StudentProfile, ParentProfile, TutorProfile, ParentStudentRelationship, Subject, TutorSubjectRanking, AvailabilitySlot. **Depends on:** `shared-config` (hard).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
+**Integration (persistence) tier for this module lives in a sibling file:** see `9-2-accounts-guardianship-persistence.md` (added Phase 5.3) for the sole-guardian `GUARDIAN_REQUIRED_HOLD` transition, invite-activation double-fire guard, and `suspendAccount`'s cascading-effects-on-active-cohorts computation, tested against a real database.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
 
 | Source file | FRs covered | NFRs covered |
 |---|---|---|
-| studentProfile.service.ts | FR-SP-006–010 | NFR-009 (parent/student scoping) |
+| studentProfile.service.ts | FR-SP-006–010, FR-AC-008 (`assertAccountStatusAllowsAccess` — gap closed) | NFR-009 (parent/student scoping) |
 | guardianship.service.ts | FR-AC-002–008, FR-SP-001 (invite path) | NFR-009 |
 | tutorProfile.service.ts | FR-TU-003, FR-TU-006 | — |
 | availability.service.ts | FR-TU-009 | — |
@@ -29,29 +35,29 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/schemas/studentProfile.schema.ts | tests/schemas/studentProfile.schema.test.ts | Unit | ☐ |
 | src/services/studentProfile.service.ts | tests/services/studentProfile.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/studentProfile.controller.ts | tests/controllers/studentProfile.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/studentProfile.routes.ts | tests/routes/studentProfile.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/studentProfile.routes.ts | tests/routes/studentProfile.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/guardianship.schema.ts | tests/schemas/guardianship.schema.test.ts | Unit | ☐ |
 | src/services/guardianship.service.ts | tests/services/guardianship.service.test.ts | Unit (mocked Prisma, notification.service) | ☐ |
 | src/controllers/guardianship.controller.ts | tests/controllers/guardianship.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/guardianship.routes.ts | tests/routes/guardianship.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/guardianship.routes.ts | tests/routes/guardianship.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/jobs/inviteReminder.job.ts | — | Underlying logic covered by `guardianship.service.test.ts`; interval wrapper excluded per standing convention | — |
 | src/schemas/tutorProfile.schema.ts | tests/schemas/tutorProfile.schema.test.ts | Unit | ☐ |
 | src/services/tutorProfile.service.ts | tests/services/tutorProfile.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/tutorProfile.controller.ts | tests/controllers/tutorProfile.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/tutorProfile.routes.ts | tests/routes/tutorProfile.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/tutorProfile.routes.ts | tests/routes/tutorProfile.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/availability.schema.ts | tests/schemas/availability.schema.test.ts | Unit | ☐ |
 | src/services/availability.service.ts | tests/services/availability.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/availability.controller.ts | tests/controllers/availability.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/availability.routes.ts | tests/routes/availability.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/availability.routes.ts | tests/routes/availability.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/subject.service.ts | tests/services/subject.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/subject.controller.ts | tests/controllers/subject.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/subject.routes.ts | tests/routes/subject.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/subject.routes.ts | tests/routes/subject.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/adminTutorVerification.service.ts | tests/services/adminTutorVerification.service.test.ts | Unit (mocked Prisma, notification.service) | ☐ |
 | src/controllers/adminTutorVerification.controller.ts | tests/controllers/adminTutorVerification.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/adminTutorVerification.routes.ts | tests/routes/adminTutorVerification.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/adminTutorVerification.routes.ts | tests/routes/adminTutorVerification.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/adminPeople.service.ts | tests/services/adminPeople.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/adminPeople.controller.ts | tests/controllers/adminPeople.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/adminPeople.routes.ts | tests/routes/adminPeople.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/adminPeople.routes.ts | tests/routes/adminPeople.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 
 ---
 
@@ -100,6 +106,18 @@ FRs: FR-SP-006–010. **OWASP: A01:2021 – Broken Access Control (parent/studen
 | Incomplete profile is accepted without error | mock update with only `preferredLanguage` supplied, no grade/subjects/format yet | call `updateAcademicProfile` | resolves successfully — the "must be complete before matching" rule is enforced elsewhere (`matching-cohorts`), not here |
 | Parent updates a linked ACTIVE student's academic profile | mock relationship lookup → ACTIVE | call `updateAcademicProfile(parentId, 'PARENT', studentId, {...})` | resolves successfully |
 | Parent updates an unlinked student's academic profile (IDOR) | mock relationship lookup → `null` | call `updateAcademicProfile(parentId, 'PARENT', otherStudentId, {...})` | throws `ApiError(403, ...)` |
+
+#### assertAccountStatusAllowsAccess (**gap closed** — see `04-database-and-data-model.md §4.2`, `8-2-accounts-guardianship.md`)
+
+FRs: FR-AC-008. **OWASP: A01:2021 – Broken Access Control (this is the platform-wide FR-AC-008 hold gate every other feature's booking/session-access call depends on).**
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| ACTIVE account resolves silently | mock `StudentProfile.findUnique` → `{ accountStatus: 'ACTIVE' }` | call `assertAccountStatusAllowsAccess(studentId)` | resolves with no return value, no error |
+| GUARDIAN_REQUIRED_HOLD account is blocked | mock `StudentProfile.findUnique` → `{ accountStatus: 'GUARDIAN_REQUIRED_HOLD' }` | call `assertAccountStatusAllowsAccess(studentId)` | throws `ApiError(403, "This student's account is on hold pending a guardian — booking and class access are unavailable until a guardian is linked")` |
+| PENDING_ACTIVATION account is blocked identically | mock `StudentProfile.findUnique` → `{ accountStatus: 'PENDING_ACTIVATION' }` | call `assertAccountStatusAllowsAccess(studentId)` | throws the identical `ApiError(403, ...)` — a not-yet-activated Grades 1–5 student and a hold-state student get the same error, since neither should be able to book or join a class |
+| Non-existent studentId | mock `StudentProfile.findUnique` → `null` | call `assertAccountStatusAllowsAccess(randomUUID())` | throws `ApiError(404, ...)` — distinct from the 403 hold cases, since this is a genuinely missing row rather than a real student on hold |
+| **Cross-feature call sites are wired in (integration-of-units check, still Unit tier — mocked Prisma throughout)** | mock `assertAccountStatusAllowsAccess` to throw `ApiError(403, ...)` via `vi.mock('../services/studentProfile.service')` | call `matching.service.ts`'s `selectTutor`, `triggerNoExactMatch`, and `requestGroupFormat` in turn, each against an otherwise-valid setup | all three propagate the identical `ApiError(403, ...)` without modification, and no `MatchRequest`/`Cohort` row is created — proves each of the three booking-entry functions calls the gate first, not that the gate itself works (that's proven above) — the equivalent case for `session.service.ts`'s `assertSessionAccessAllowed` lives in `9-4-class-delivery-library.md`, not duplicated here |
 
 ---
 
@@ -158,6 +176,7 @@ FRs: FR-AC-001–008. **OWASP: A01:2021 – Broken Access Control, A04:2021 – 
 | Token cannot be reused after activation | mock a token already `ACTIVE` | call `activateInvite(sameToken, password)` again | rejected — either the 404 (token consumed/rotated on activation) or a dedicated already-activated message; whichever the implementer chooses, the test asserts a second activation attempt with the same token never succeeds a second time (prevents a leaked/observed invite link from being replayed) |
 | Password is hashed before persistence | mock a valid activation | call `activateInvite(token, "plainpass123")` | assert the `User.create` call's password field is a bcrypt hash, not the literal string |
 | Unlocks full parent functionality (relationship status observable) | mock a valid activation | call `activateInvite` | resolves `relationshipStatus: 'ACTIVE'` — the value the parent-side UI/other endpoints key off of to unlock full functionality (FR-AC-004) |
+| **[Phase 4 — Review §6.1] Idempotency — exactly one User row is created even under a near-simultaneous retry** | mock the token lookup returning the same still-valid `ParentStudentRelationship` on two successive calls (simulating a client double-submit or network retry before the token-consumption write from the first call has been reflected back to this test's mocks) | call `activateInvite(token, password)` twice in immediate succession | exactly one `User.create` call occurs across both invocations — the second call's token-validity check must read the *already-consumed* state (whichever mechanism the implementer chose per the case above: token rotation, an `ACTIVE`-status guard, or both) and reject rather than create a second `User`/`StudentProfile` pair for the same relationship; this makes the existing "token cannot be reused" case's guarantee explicit as an idempotency property, per Review §6.1's naming of invite activation as a named double-fire risk |
 
 #### inviteOptionalGuardian
 
@@ -171,6 +190,7 @@ FRs: FR-AC-001–008. **OWASP: A01:2021 – Broken Access Control, A04:2021 – 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
 | Guardian revokes their own relationship (not sole mandatory) | mock student has 2 `MANDATORY_GUARDIAN` relationships, caller revokes one | call `revokeOrModifyRelationship(parentId, 'PARENT', relationshipId, { revoke: true })` | relationship set to a revoked/inactive state; `studentAccountStatus` key **omitted** from the response entirely (not `null`) — this was not the sole guardian |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Non-sole-guardian removal is also audit-logged, tagged identically** | mock the same non-sole removal above; spy on `auditLog.service.record` | call `revokeOrModifyRelationship(parentId, 'PARENT', relationshipId, { revoke: true })` | `auditLog.service.record` called with `{ actor: parentId, action: 'GUARDIAN_REMOVED', target: relationshipId, timestamp }` — the same `action` value as the sole-guardian case below, since both are the same underlying event for audit purposes; only the downstream `GUARDIAN_REQUIRED_HOLD` consequence differs by case, not whether the removal itself gets logged |
 | Guardian revokes the sole mandatory relationship — triggers hold | mock student has exactly 1 `MANDATORY_GUARDIAN` relationship, caller revokes it | call `revokeOrModifyRelationship(parentId, 'PARENT', relationshipId, { revoke: true })` | delegates to `handleSoleGuardianRemoval`; `StudentProfile.accountStatus` set to `GUARDIAN_REQUIRED_HOLD`; response includes `studentAccountStatus: 'GUARDIAN_REQUIRED_HOLD'` |
 | Sole-guardian removal preserves all student data | mock the above | call `revokeOrModifyRelationship` | assert no delete call is made against `StudentProfile`, XP ledger, recordings, or any other student-owned data — FR-AC-008's explicit "no data deleted" guarantee |
 | Grade 1–5 student attempts to revoke their own mandatory guardian | mock caller is the student (role STUDENT), grade 1–5 | call `revokeOrModifyRelationship(studentId, 'STUDENT', relationshipId, { revoke: true })` | throws `ApiError(403, "Only a guardian or Admin can remove this relationship")` |
@@ -178,6 +198,7 @@ FRs: FR-AC-001–008. **OWASP: A01:2021 – Broken Access Control, A04:2021 – 
 | Grade 6–12 student revokes a relationship they *did* initiate | mock `initiatedBy === studentId` | call `revokeOrModifyRelationship(studentId, 'STUDENT', relationshipId, { revoke: true })` | succeeds — FR-AC-007's explicit student-initiated exception |
 | Unrelated caller attempts to revoke a relationship entirely unconnected to them (IDOR) | mock caller has no relation to the target relationship at all | call `revokeOrModifyRelationship(randomUserId, 'PARENT', someOtherRelationshipId, {...})` | throws `ApiError(403, ...)` — a parent must not modify a relationship by guessing another family's relationship id |
 | Modify-permissions-only (no revoke) never triggers the hold flow | mock `{ revoke: false, permissions: {...} }` on any relationship, including a sole-guardian one | call `revokeOrModifyRelationship` | `handleSoleGuardianRemoval` is **not** invoked; only `permissions` is updated |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Sole-guardian removal writes an audit log entry** | mock the sole-guardian removal case above; spy on `auditLog.service.record` (see `00-agent-rules.md`'s audit-log convention) | call `revokeOrModifyRelationship(parentId, 'PARENT', relationshipId, { revoke: true })` | `auditLog.service.record` called with `{ actor: parentId, action: 'GUARDIAN_REMOVED', target: relationshipId, timestamp }` — same `action` value as the non-sole case above; this row exists separately only because this path additionally triggers `GUARDIAN_REQUIRED_HOLD`, and both consequences (the hold and the audit entry) are asserted as independent expectations rather than inferring the audit entry from the hold-state test |
 
 ---
 
@@ -219,6 +240,15 @@ FRs: FR-TU-003, FR-TU-006. **OWASP: A01:2021 – Broken Access Control, A08:2021
 | Returns the tutor's own profile | mock `prisma.tutorProfile.findUnique` | call `getProfile(tutorId)` | resolves `TutorProfileDTO` |
 | updateProfile applies only editable fields | mock update; spy on call args | call `updateProfile(tutorId, { bio: "new bio", verificationStatus: "VERIFIED" })` | assert the persisted update excludes `verificationStatus` entirely — a tutor must never self-approve their own verification by smuggling the field into a profile-edit payload, even if it slipped past schema stripping (defense in depth alongside 9.8's schema case) |
 
+#### resubmitVerification — Issue 2 fix
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Resubmitting a `REJECTED` tutor returns them to `PENDING` | mock tutor found, `verificationStatus: REJECTED` | call `resubmitVerification(tutorId)` | resolves `{ id, verificationStatus: 'PENDING' }`; assert the persisted update also clears `verifiedAt: null, verifiedById: null` |
+| Resubmitting a `PENDING` tutor is rejected | mock tutor found, `verificationStatus: PENDING` | call `resubmitVerification(tutorId)` | throws `ApiError(409, "Only a rejected application can be resubmitted")` |
+| Resubmitting a `VERIFIED` tutor is rejected | mock tutor found, `verificationStatus: VERIFIED` | call `resubmitVerification(tutorId)` | throws the same `ApiError(409, ...)` |
+| Resubmission alone does not touch other profile fields | mock tutor found, `REJECTED`, spy on update call args | call `resubmitVerification(tutorId)` | assert the update payload contains only `verificationStatus`, `verifiedAt`, `verifiedById` — never `bio`/`experienceDescription`/etc., which remain the sole responsibility of `updateProfile` |
+
 #### rankSubjects
 
 | Case | Setup | Action | Expected result |
@@ -236,9 +266,11 @@ FRs: FR-TU-003, FR-TU-006. **OWASP: A01:2021 – Broken Access Control, A08:2021
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| All 3 routes require auth | no Authorization header | request `GET/PATCH /tutors/me/profile`, `PUT /tutors/me/subjects` | all `401` |
+| All 4 routes require auth | no Authorization header | request `GET/PATCH /tutors/me/profile`, `POST /tutors/me/resubmit-verification`, `PUT /tutors/me/subjects` | all `401` |
 | rankSubjects validates the 2-max/unique-rank rule at the route layer | mock controller layer | request `PUT /tutors/me/subjects` with 3 subjects | rejected by `validate(rankSubjectsSchema)`, controller never called |
 | updateProfile controller passes only req.body through, id from req.user | mock service | call controller | `updateProfile` called with `(req.user.id, req.body)` — never a client-suppliable tutor id from params/body that could target another tutor's profile |
+| resubmitVerification controller takes no body, id from req.user only — Issue 2 fix | mock service | `POST /tutors/me/resubmit-verification` with an arbitrary JSON body | `resubmitVerification` called with only `req.user.id`; any body content is ignored, never forwarded |
+| resubmitVerification on an already-`PENDING`/`VERIFIED` tutor surfaces the service's 409 | mock service to throw `ApiError(409, ...)` | `POST /tutors/me/resubmit-verification` | route returns `409` with the service's message, not a generic error |
 
 ---
 
@@ -332,6 +364,7 @@ FRs: FR-TU-004, FR-AD-002.
 | Approve a pending tutor | mock tutor found, `verificationStatus: PENDING` | call `approveTutor(tutorId, adminId)` | sets `verificationStatus: VERIFIED, verifiedAt, verifiedById: adminId`; dispatch notification sent to the tutor |
 | Reject a pending tutor with a reason | mock tutor found, `PENDING` | call `rejectTutor(tutorId, adminId, "Incomplete credentials")` | sets `verificationStatus: REJECTED`; the reason is persisted as an internal note field only |
 | Rejected reason never leaks to the tutor-facing notification | mock reject; spy on `dispatchNotification`'s payload | call `rejectTutor(tutorId, adminId, "Suspicious ID document")` | assert the dispatched notification payload does **not** contain the literal reason string — only a generic rejection message, per API spec §2.2's explicit non-disclosure rule |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Rejection writes an audit log entry, including the internal reason** | mock the reject case above; spy on `auditLog.service.record` | call `rejectTutor(tutorId, adminId, "Suspicious ID document")` | `auditLog.service.record` called with `{ actor: adminId, action: 'TUTOR_REJECTED', target: tutorId, timestamp }` — unlike the tutor-facing notification (previous case), the audit trail is Admin-internal, so this is a genuinely separate assertion, not a relaxation of the non-disclosure rule above |
 | Approving an already-reviewed tutor | mock tutor found, `verificationStatus: VERIFIED` already | call `approveTutor(tutorId, adminId)` | throws `ApiError(409, "This tutor has already been reviewed")` |
 | Rejecting an already-rejected tutor | mock tutor found, `verificationStatus: REJECTED` already | call `rejectTutor(tutorId, adminId, "...")` | throws the same `ApiError(409, ...)` |
 | Approval is what makes a tutor matchable (integration note, tested at unit level via the flag) | mock approve | call `approveTutor(tutorId, adminId)` | assert the persisted `verificationStatus: VERIFIED` — the actual matchability behavior is verified in `matching-cohorts`' own test suite (9-3), this test only confirms the flag this feature is responsible for setting |
@@ -360,6 +393,9 @@ FRs: FR-AD-001 (incl. relationship mgmt), FR-AD-003, FR-MK-003 (intake). **OWASP
 | Filters by role | mock `findMany({ where: { role: 'TUTOR' } })` | call `listUsers('TUTOR', undefined, 1, 20)` | resolves only tutors |
 | Search term filters across name/email/phone | mock `findMany` with a search `OR` clause | call `listUsers(undefined, "amanuel", 1, 20)` | resolves matching users |
 | No filters returns all users, paginated | mock `findMany` unfiltered | call `listUsers(undefined, undefined, 1, 20)` | resolves a paginated full list |
+| **[Phase 4 — Review §6.4, OWASP A03:2021] Regex-DoS payload in the search term does not hang the query** | — | call `listUsers(undefined, "(a+)+$", 1, 20)` (a catastrophic-backtracking-shaped string) | resolves/rejects within the test's normal timeout; inspect the constructed Prisma `where` clause to confirm the term is passed as a parameterized `contains`/`equals` string across the `name`/`email`/`phone` `OR` fields, never compiled into an application-level `RegExp` executed against candidate rows in memory |
+| **[Phase 4 — Review §6.4, OWASP A03:2021] Operator-injection-shaped search term is treated as a literal string** | — | call `listUsers(undefined, '{"$ne": null}', 1, 20)` | the term is matched literally (yielding whatever subset of fixture users happen to contain that literal substring, realistically zero) — the string is never spread into the Prisma `where` clause as structured input; the test inspects the mock call args to confirm the raw string landed in a scalar position, not merged into the filter shape |
+| **[Phase 4 — Review §6.4, OWASP A02:2021] Raw phone/email are returned to Admin by design, but never written to logs on error** | mock `findMany` to throw mid-query | call `listUsers('TUTOR', "amanuel", 1, 20)` | whatever this function logs/passes to error handling on failure does not include the raw `search` term or any candidate user's `phone`/`email` — this endpoint's *response* legitimately includes raw contact info (Admin needs it to manage/contact accounts, per `06-api/02-accounts-guardianship-api.md`'s `GET /admin/people`), so this test does not assert response-level masking; it targets only the log/error path, mirroring the equivalent test on `payment.service.ts`'s webhook handler (`9-7-payments-earnings.md §9.4`) |
 
 #### manageRelationshipRecords
 
@@ -378,6 +414,7 @@ FRs: FR-AD-001 (incl. relationship mgmt), FR-AD-003, FR-MK-003 (intake). **OWASP
 | This function never itself re-matches students | mock a tutor suspension with affected cohorts; spy on any matching-service import/call | call `suspendAccount` | assert no `cohort.service`/`adminMatching.service` function was called directly — this function only *flags* `affectedCohortIds` for `matching-cohorts` to consume, per Doc 8-2's explicit boundary |
 | Suspension reason never leaks to affected students | mock a suspension; spy on any notification dispatched to the affected students (via a hypothetical downstream call, or confirm none is made from this function directly) | call `suspendAccount(tutorId, adminId, "Repeated no-shows and a complaint on file", 'SUSPENDED')` | the internal `reason` string is not present in anything this function itself dispatches to non-Admin recipients |
 | restrictAccount (lesser action) is distinguishable from suspendAccount | mock a `RESTRICTED` call | call `suspendAccount(userId, adminId, reason, 'RESTRICTED')` | persisted status reflects `RESTRICTED`, not conflated with a full `SUSPENDED` state |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Suspension/restriction is audit-logged regardless of caller** | mock a valid `suspendAccount` call (first case above); spy on `auditLog.service.record` | call `suspendAccount(userId, adminId, "Policy violation", 'SUSPENDED')` | `auditLog.service.record` called with `{ actor: adminId, action: 'ACCOUNT_SUSPENDED', target: userId, timestamp }` (or `'ACCOUNT_RESTRICTED'` for the `RESTRICTED` variant) — this covers both the direct `POST /admin/people/:userId/suspend` path and the `TUTOR_SUSPENDED` dispute-resolution path (`9-8-support-trust-admin.md`), since both call this same function; `9-8`'s test only asserts the delegation, not a second copy of this assertion |
 
 ---
 
@@ -396,6 +433,8 @@ FRs: FR-AD-001 (incl. relationship mgmt), FR-AD-003, FR-MK-003 (intake). **OWASP
 
 - [ ] Every ownership-scoped read/write in this feature (`studentProfile.getProfile`/`updateBasicProfile`/`updateAcademicProfile`, `guardianship.resendOrRegenerateInvite`/`revokeOrModifyRelationship`, `availability.removeSlot`) has an explicit IDOR test where the caller is *not* the owner and *not* an authorized parent — not just a happy-path "owner succeeds" test.
 - [ ] The sole-guardian-hold case asserts both the state transition (`GUARDIAN_REQUIRED_HOLD`) **and** the absence of any delete call — a test that only checks the status field would miss a regression that also (incorrectly) purges data.
+- [ ] **[Phase 4]** `GUARDIAN_REMOVED`, `TUTOR_REJECTED`, and `ACCOUNT_SUSPENDED`/`ACCOUNT_RESTRICTED` audit entries are each asserted with the correct `action` string from `00-agent-rules.md`'s convention — not a generic "an audit call happened" check that would pass even with the wrong tag.
+- [ ] **[Phase 4]** `listUsers`'s injection cases assert the actual constructed Prisma filter shape (a scalar match, not a spread structured object), not merely "the call didn't throw" — a query that silently no-ops on a malicious payload would pass a throw-only assertion while still representing the wrong defensive behavior if it ever did match something.
 - [ ] The "field omitted vs. present" convention (`studentAccountStatus`, `affectedCohortIds`) is asserted via `expect(result).not.toHaveProperty(...)`, not `expect(result.field).toBeUndefined()` — the latter passes even if the key exists with an explicit `undefined` value, which is a different wire shape once JSON-serialized (a `JSON.stringify` of `{ x: undefined }` drops the key, but this distinction is worth testing explicitly rather than assuming).
 - [ ] `rejectTutor`'s "reason never leaks" case actually inspects the mocked `dispatchNotification` call's payload contents, not just that a notification was sent.
 - [ ] `tutorProfile.updateProfile`'s mass-assignment guard against `verificationStatus` is tested by including that field in the input and asserting it's absent from the persisted update — not by only testing legitimate fields and assuming the illegitimate one is naturally excluded.

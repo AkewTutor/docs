@@ -6,6 +6,10 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 **Owns:** ComplaintReport. **Depends on:** `shared-config`, `messaging`, `class-delivery-library` (hard, via `relatedThreadId`/`relatedSessionId`). **Soft-integrates with:** `payments-earnings` (refund resolution action, no FK), `accounts-guardianship` (suspension resolution action, no FK). This is the one feature soft-coupled to almost everything by design — an integration surface, not a domain of its own data (Feature Decomposition §1.1).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -26,13 +30,13 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/schemas/complaint.schema.ts | tests/schemas/complaint.schema.test.ts | Unit | ☐ |
 | src/services/complaint.service.ts | tests/services/complaint.service.test.ts | Unit (mocked Prisma, mocked `messaging.service.ts` thread lookup, mocked `notification.service.ts`) | ☐ |
 | src/controllers/complaint.controller.ts | tests/controllers/complaint.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/complaint.routes.ts | tests/routes/complaint.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/complaint.routes.ts | tests/routes/complaint.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/adminDispute.service.ts | tests/services/adminDispute.service.test.ts | Unit (mocked Prisma, mocked `refund.service.createPendingRefund`/`approveRefund` — **I1 fix**, mocked `adminPeople.service.suspendAccount`, mocked `notification.service.ts`) | ☐ |
 | src/controllers/adminDispute.controller.ts | tests/controllers/adminDispute.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/adminDispute.routes.ts | tests/routes/adminDispute.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/adminDispute.routes.ts | tests/routes/adminDispute.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/adminReporting.service.ts | tests/services/adminReporting.service.test.ts | Unit (mocked Prisma, reading across feature tables) | ☐ |
 | src/controllers/adminReporting.controller.ts | tests/controllers/adminReporting.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/adminReporting.routes.ts | tests/routes/adminReporting.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/adminReporting.routes.ts | tests/routes/adminReporting.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 
 ---
 
@@ -126,6 +130,8 @@ FRs: FR-AD-012, FR-AD-017, FR-MK-003, FR-SP-048. **OWASP: A01:2021 – Broken Ac
 | resolutionNotes never disclosed to the reporter verbatim | mock a resolution with sensitive internal notes | call `resolveDispute(...)`, then call `getForReporter` (9.3) for the same complaint | the reporter-facing read never surfaces `resolutionNotes` — cross-checked against 9.3's own assertion, not merely assumed here |
 | Already-closed complaint rejected | mock `status` already `RESOLVED`/`DISMISSED` | call `resolveDispute(complaintId, adminId, ...)` again | throws `ApiError(409, "This complaint has already been closed")` |
 | Missing resolutionAction on a RESOLVED submission rejected at the service layer too | bypass the schema, simulate an internal call | call `resolveDispute(complaintId, adminId, { status: 'RESOLVED', resolutionNotes: '...' })` | throws `ApiError(400, "A resolution action is required to resolve a complaint")` — redundant with the schema, retained as authoritative |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Every resolution action is audit-logged, tagged by the action taken** | mock each of the three resolution branches above (`DISMISSED`, `NO_ACTION`, `REFUND_ISSUED`) and the `TUTOR_SUSPENDED` case below; spy on `auditLog.service.record` for each | call `resolveDispute(complaintId, adminId, {...})` for each variant | `auditLog.service.record` called once per call with `{ actor: adminId, action: 'DISPUTE_RESOLVED', target: complaintId, timestamp }` — a single consistent `action` tag covering the dispute-resolution event itself, distinct from (and in addition to) the specific `REFUND_APPROVED`/`TUTOR_REJECTED`-style tags that `refund.service.ts` (9-7) and `adminPeople.service.ts` (9-2) log independently for the downstream actions this function delegates to; a reviewer tracing a single dispute's full audit trail should see both this entry and the delegated one, not one standing in for the other |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] TUTOR_SUSPENDED branch's downstream call is itself audited by the function it delegates to, not duplicated here** | mock the `TUTOR_SUSPENDED` case (line above, `adminPeople.service.suspendAccount` spy) | call `resolveDispute(...)` with `resolutionAction: 'TUTOR_SUSPENDED'` | this file's own test only asserts the delegation call (already covered above) plus the `DISPUTE_RESOLVED` audit entry (previous row) — it does not re-assert `adminPeople.service.ts`'s own internal audit-logging behavior for the suspension itself, since that belongs to and is already covered by that file's own test suite; avoids two files both claiming ownership of the same assertion |
 
 ---
 
@@ -181,6 +187,7 @@ FRs: FR-AD-021, FR-AD-022, FR-AD-005, FR-AD-014, FR-AD-020. **OWASP: A01:2021 �
 
 - [ ] `createComplaint`'s cross-user ownership 403 is tested against a real, different cohort/session/payment the caller has no relation to — not just a nonexistent id, which would only exercise a 404-adjacent path rather than the ownership check itself.
 - [ ] `getForReporter`'s omission of `resolutionNotes`/`resolvedById` is tested as an actual assertion on the resolved object's keys — not inferred from "the test didn't check for it," which would pass even if a future change accidentally leaked the field.
+- [ ] **[Phase 4]** `resolveDispute`'s `DISPUTE_RESOLVED` audit assertion and `9-2-accounts-guardianship.md`'s `ACCOUNT_SUSPENDED`/`TUTOR_REJECTED` assertions are not duplicated against each other — confirm each file asserts only the audit entry the function it's testing actually writes directly, per the ownership note added alongside these cases.
 - [ ] `resolveDispute`'s `REFUND_ISSUED` path is tested by spying on `refund.service.createPendingRefund`/`approveRefund` and asserting the exact arguments passed — not merely that *some* refund-shaped object appears in the response, which would miss a regression back to a bare client-supplied amount (the exact bug H4 fixed).
 - [ ] The already-closed `409` case is tested against both prior states (`RESOLVED` and `DISMISSED`) independently, not only one of the two.
 - [ ] `aggregatePlatformHealth`'s read-only guarantee is tested by spying on all Prisma write methods and asserting zero calls — not inferred from the return value looking correct.

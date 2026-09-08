@@ -4,6 +4,8 @@
 
 **Depends on:** Matching & Cohorts (hard).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -25,26 +27,27 @@
 
 ### 9.1 Test File Map
 
-| Source file | Test file | Notes |
-|---|---|---|
-| src/hooks/useSessions.ts | tests/hooks/useSessions.test.ts | mandatory — full block below (15s polling) |
-| src/hooks/useRecordingConsent.ts | tests/hooks/useRecordingConsent.test.ts | mandatory |
-| src/hooks/useRecordings.ts | tests/hooks/useRecordings.test.ts | mandatory — full blocks below (`useUploadRecording`, `useSignedUrl`) |
-| src/hooks/useLibrary.ts | tests/hooks/useLibrary.test.ts | mandatory |
-| src/hooks/useReschedule.ts | tests/hooks/useReschedule.test.ts | mandatory — full block below |
-| src/lib/classifyReschedule.ts | tests/lib/classifyReschedule.test.ts | mandatory (util, per 8-4) — full block below |
-| src/hooks/useWeeklyAssessment.ts | tests/hooks/useWeeklyAssessment.test.ts | mandatory |
-| src/components/SessionCard.tsx | tests/components/SessionCard.test.tsx | non-trivial: join-button gate, countdown, conditional reschedule link |
-| src/pages/tutor/ConductClassPage.tsx | tests/pages/ConductClassPage.test.tsx | non-trivial: link-submission vs. complete-action branching, time gate |
-| src/components/RecordingIndicatorBanner.tsx | — | purely presentational, `visible` prop only — see §9.9 |
-| src/pages/RecordingConsentPage.tsx | tests/pages/RecordingConsentPage.test.tsx | non-trivial: acknowledged vs. not-yet branch |
-| src/pages/LibraryPage.tsx | tests/pages/LibraryPage.test.tsx | non-trivial: role-gated upload form, cohort selector |
-| src/components/RecordingPlayer.tsx | tests/components/RecordingPlayer.test.tsx | non-trivial: signed-URL retention edge case — full block below |
-| src/components/MaterialUploadForm.tsx | tests/components/MaterialUploadForm.test.tsx | non-trivial: dual-field submit gate |
-| src/pages/RequestReschedulePage.tsx, components/RescheduleForm.tsx | tests/components/RescheduleForm.test.tsx | non-trivial: live classification vs. server reconciliation — full block below |
-| src/pages/tutor/WeeklyAssessmentPage.tsx, components/AssessmentForm.tsx | tests/pages/WeeklyAssessmentPage.test.tsx | non-trivial: client-side duplicate-submission check |
-| src/pages/student/ProgressPage.tsx | tests/pages/ProgressPage.test.tsx | thin wrapper; empty/success states only |
-| src/pages/admin/RecordingComplianceQueuePage.tsx | tests/pages/RecordingComplianceQueuePage.test.tsx | non-trivial: two-tier severity display |
+| Source file | Test file | Test type | Notes |
+|---|---|---|---|
+| src/hooks/useSessions.ts | tests/hooks/useSessions.test.ts | Hook | mandatory — full block below (15s polling) |
+| src/hooks/useRecordingConsent.ts | tests/hooks/useRecordingConsent.test.ts | Hook | mandatory |
+| src/hooks/useRecordings.ts | tests/hooks/useRecordings.test.ts | Hook | mandatory — full blocks below (`useUploadRecording`, `useSignedUrl`) |
+| src/hooks/useLibrary.ts | tests/hooks/useLibrary.test.ts | Hook | mandatory |
+| src/hooks/useReschedule.ts | tests/hooks/useReschedule.test.ts | Hook | mandatory — full block below |
+| src/lib/classifyReschedule.ts | tests/lib/classifyReschedule.test.ts | Unit | mandatory (util, per 8-4) — full block below |
+| src/hooks/useWeeklyAssessment.ts | tests/hooks/useWeeklyAssessment.test.ts | Hook | mandatory |
+| src/components/SessionCard.tsx | tests/components/SessionCard.test.tsx | Component | non-trivial: join-button gate, countdown, conditional reschedule link |
+| src/pages/student/UpcomingClassesPage.tsx | — | — | Not required — thin route/layout wrapper around `useUpcomingSessions()` + a stable ascending sort with no branching logic; covered by `SessionCard.test.tsx` plus a smoke test for the empty-list state, matching the `AvailabilityPage.tsx`/`SubjectRankingPage.tsx` precedent in `9-2-accounts-guardianship.md §9.1` |
+| src/pages/tutor/ConductClassPage.tsx | tests/pages/ConductClassPage.test.tsx | Component | non-trivial: link-submission vs. complete-action branching, time gate |
+| src/components/RecordingIndicatorBanner.tsx | — | — | purely presentational, `visible` prop only — see §9.9 |
+| src/pages/RecordingConsentPage.tsx | tests/pages/RecordingConsentPage.test.tsx | Component | non-trivial: acknowledged vs. not-yet branch |
+| src/pages/LibraryPage.tsx | tests/pages/LibraryPage.test.tsx | Component | non-trivial: role-gated upload form, cohort selector |
+| src/components/RecordingPlayer.tsx | tests/components/RecordingPlayer.test.tsx | Component | non-trivial: signed-URL retention edge case — full block below |
+| src/components/MaterialUploadForm.tsx | tests/components/MaterialUploadForm.test.tsx | Component | non-trivial: dual-field submit gate |
+| src/pages/RequestReschedulePage.tsx, components/RescheduleForm.tsx | tests/components/RescheduleForm.test.tsx | Component | non-trivial: live classification vs. server reconciliation — full block below |
+| src/pages/tutor/WeeklyAssessmentPage.tsx, components/AssessmentForm.tsx | tests/pages/WeeklyAssessmentPage.test.tsx | Component | non-trivial: client-side duplicate-submission check |
+| src/pages/student/ProgressPage.tsx | tests/pages/ProgressPage.test.tsx | Component | thin wrapper; empty/success states only |
+| src/pages/admin/RecordingComplianceQueuePage.tsx | tests/pages/RecordingComplianceQueuePage.test.tsx | Component | non-trivial: two-tier severity display |
 
 ---
 
@@ -87,6 +90,7 @@ FRs: FR-MK-004, FR-MK-006–008. **OWASP: A08:2021 – Software and Data Integri
 | ≥12h before session → `'FREE_RESCHEDULE'` | `hoursUntilSession = 12` exactly, and `13` | call `classifyReschedule(sessionScheduledStart, requestedAt)` | `'FREE_RESCHEDULE'` in both — confirms the boundary is inclusive at exactly 12h |
 | <12h before session → `'SAME_DAY_MISS'` | `hoursUntilSession = 11.999` | call | `'SAME_DAY_MISS'` |
 | Negative `hoursUntilSession` (session already started/past) still resolves to `'SAME_DAY_MISS'` | `requestedAt` after `sessionScheduledStart` | call | `'SAME_DAY_MISS'` — 8-4 explicitly notes this util does not separately guard against that case, relying on the form to prevent selecting a past/in-progress session as the target in the first place; this test documents that reliance rather than silently assuming it |
+| **[Phase 4 — Review §6.1] hoursUntilSession is computed from Date instants, unaffected by the browser's local DST zone** | mock `Date.now()`/`requestedAt` and `sessionScheduledStart` as UTC instants exactly 12 hours apart, with the test environment's `Intl`/`Date` locale set to a DST-observing zone (e.g. `America/New_York`) straddling a transition date | call `classifyReschedule(sessionScheduledStart, requestedAt)` | resolves `'FREE_RESCHEDULE'` regardless of the browser's local zone — `hoursUntilSession` is derived from the millisecond difference between the two `Date` instants, never from a re-parsed local-calendar difference that a DST-observing browser locale could shift by an hour; this is a client-side belt-and-suspenders check, since `useRequestReschedule`'s "server value wins" case above already prevents any such drift from actually reaching the person as a wrong confirmation |
 
 #### useRequestReschedule
 
@@ -157,6 +161,7 @@ FRs: FR-MK-004, FR-MK-006–008. **OWASP: A08:2021 – Software and Data Integri
 - [ ] `classifyReschedule`'s 12h-boundary test checks exactly 12h (inclusive) and just under it, not just "some number well above/below 12."
 - [ ] `useSignedUrl`'s `retry: false` case asserts the mock's call count stays at exactly 1, not merely that the component eventually shows the 404 state (which could pass even if a retry silently happened first).
 - [ ] `SessionCard`'s "no time-window check" case is a genuine positive assertion (button enabled with a far-future `scheduledStart`), not the absence of a test — this guards against someone later "improving" the component with an undocumented time-window restriction that would contradict 8-4.
+- [ ] **[Phase 4]** The DST case in `classifyReschedule.test.ts` actually configures a DST-observing locale/zone in the test environment (not the default CI runner zone, which may be UTC and would make the test pass trivially regardless of whether the implementation is instant-based or wall-clock-based) — same false-pass risk flagged in the backend doc's equivalent note.
 - [ ] `RecordingPlayer`'s over-retention check inspects actual storage/module state, not just that the component re-fetches correctly on remount.
 
 ---

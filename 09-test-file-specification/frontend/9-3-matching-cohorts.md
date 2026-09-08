@@ -4,6 +4,8 @@
 
 **Depends on:** Accounts & Guardianship (hard).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -22,21 +24,21 @@
 
 ### 9.1 Test File Map
 
-| Source file | Test file | Notes |
-|---|---|---|
-| src/hooks/useMatching.ts | tests/hooks/useMatching.test.ts | mandatory — full blocks below |
-| src/hooks/useCohort.ts | tests/hooks/useCohort.test.ts | mandatory — full block below |
-| src/hooks/useAdminMatching.ts | tests/hooks/useAdminMatching.test.ts | mandatory — full block below |
-| src/hooks/useFormatSwitch.ts | tests/hooks/useFormatSwitch.test.ts | mandatory |
-| src/pages/student/FindTutorPage.tsx | tests/pages/FindTutorPage.test.tsx | non-trivial: URL-param-driven filters |
-| src/pages/student/TutorRecommendationsPage.tsx | tests/pages/TutorRecommendationsPage.test.tsx | non-trivial: empty-list branch renders `NoExactMatchButton` |
-| src/components/NoExactMatchButton.tsx | tests/components/NoExactMatchButton.test.tsx | non-trivial: live countdown, clamping — full block below |
-| src/components/GroupAssignmentCard.tsx | tests/components/GroupAssignmentCard.test.tsx | non-trivial: visibility floor is security-relevant — full block below |
-| src/pages/student/GroupFormatStatusPage.tsx | tests/pages/GroupFormatStatusPage.test.tsx | non-trivial: derived tab state |
-| src/pages/student/FormatSwitchPage.tsx | tests/pages/FormatSwitchPage.test.tsx | non-trivial: pre-fill + submit |
-| src/pages/admin/MatchingQueuePage.tsx, components/ApprovalQueueTable.tsx | tests/pages/MatchingQueuePage.test.tsx | non-trivial: overdue visual state, required-reason reject |
-| src/pages/admin/ManualAssignmentPage.tsx, components/ManualAssignmentForm.tsx | tests/components/ManualAssignmentForm.test.tsx | non-trivial: format-size-constrained submit gate |
-| src/pages/student/TutorProfileViewPage.tsx | tests/pages/TutorProfileViewPage.test.tsx | thin wrapper around `useTutorFullProfile`; 404 state covered, no separate full block |
+| Source file | Test file | Test type | Notes |
+|---|---|---|---|
+| src/hooks/useMatching.ts | tests/hooks/useMatching.test.ts | Hook | mandatory — full blocks below |
+| src/hooks/useCohort.ts | tests/hooks/useCohort.test.ts | Hook | mandatory — full block below |
+| src/hooks/useAdminMatching.ts | tests/hooks/useAdminMatching.test.ts | Hook | mandatory — full block below |
+| src/hooks/useFormatSwitch.ts | tests/hooks/useFormatSwitch.test.ts | Hook | mandatory |
+| src/pages/student/FindTutorPage.tsx | tests/pages/FindTutorPage.test.tsx | Component | non-trivial: URL-param-driven filters |
+| src/pages/student/TutorRecommendationsPage.tsx | tests/pages/TutorRecommendationsPage.test.tsx | Component | non-trivial: empty-list branch renders `NoExactMatchButton` |
+| src/components/NoExactMatchButton.tsx | tests/components/NoExactMatchButton.test.tsx | Component | non-trivial: live countdown, clamping — full block below |
+| src/components/GroupAssignmentCard.tsx | tests/components/GroupAssignmentCard.test.tsx | Component | non-trivial: visibility floor is security-relevant — full block below |
+| src/pages/student/GroupFormatStatusPage.tsx | tests/pages/GroupFormatStatusPage.test.tsx | Component | non-trivial: derived tab state |
+| src/pages/student/FormatSwitchPage.tsx | tests/pages/FormatSwitchPage.test.tsx | Component | non-trivial: pre-fill + submit |
+| src/pages/admin/MatchingQueuePage.tsx, components/ApprovalQueueTable.tsx | tests/pages/MatchingQueuePage.test.tsx | Component | non-trivial: overdue visual state, required-reason reject |
+| src/pages/admin/ManualAssignmentPage.tsx, components/ManualAssignmentForm.tsx | tests/components/ManualAssignmentForm.test.tsx | Component | non-trivial: format-size-constrained submit gate |
+| src/pages/student/TutorProfileViewPage.tsx | tests/pages/TutorProfileViewPage.test.tsx | Component | thin wrapper around `useTutorFullProfile`; 404 state covered, no separate full block |
 
 ---
 

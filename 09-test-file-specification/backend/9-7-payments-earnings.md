@@ -6,6 +6,12 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 **Owns:** PricingConfig, Payment, PaymentPause, Refund, TutorEarning, Payout, PromotionCode. **Depends on:** `matching-cohorts`, `class-delivery-library` (hard — `TutorEarning` → `ScheduledSession`).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
+**Integration (persistence) tier for this module lives in a sibling file:** see `9-7-payments-earnings-persistence.md` (added Phase 5.2) for payment status transitions, webhook idempotency, pricing-activation atomicity, refund-claim races, and payout ledger aggregation tested against a real database — including the real `AuditLog` persistence checks for `approveRefund`/`rejectRefund` that `00-agent-rules.md`'s audit-log convention assigns to this tier.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -31,28 +37,28 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/schemas/payment.schema.ts | tests/schemas/payment.schema.test.ts | Unit | ☐ |
 | src/services/payment.service.ts | tests/services/payment.service.test.ts | Unit (mocked Prisma, mocked `chapa.client.ts`, mocked `promotion.service.ts`, mocked `class-delivery-library`'s `session.service.generateSessionsForCohort`) | ☐ |
 | src/controllers/payment.controller.ts | tests/controllers/payment.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/payment.routes.ts | tests/routes/payment.routes.test.ts | Integration (supertest, raw-body-aware for the webhook route) | ☐ |
+| src/routes/payment.routes.ts | tests/routes/payment.routes.test.ts | Integration (HTTP contract, supertest, raw-body-aware for the webhook route) | ☐ |
 | src/services/paymentPause.service.ts | tests/services/paymentPause.service.test.ts | Unit (mocked Prisma, mocked `session.service.ts`) | ☐ |
 | src/controllers/paymentPause.controller.ts | tests/controllers/paymentPause.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/paymentPause.routes.ts | tests/routes/paymentPause.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/paymentPause.routes.ts | tests/routes/paymentPause.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/pricing.schema.ts | tests/schemas/pricing.schema.test.ts | Unit | ☐ |
 | src/services/pricing.service.ts | tests/services/pricing.service.test.ts | Unit (mocked Prisma, real `Decimal` arithmetic) | ☐ |
 | src/controllers/pricing.controller.ts | tests/controllers/pricing.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/pricing.routes.ts | tests/routes/pricing.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/pricing.routes.ts | tests/routes/pricing.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/refund.schema.ts | tests/schemas/refund.schema.test.ts | Unit | ☐ |
 | src/services/refund.service.ts | tests/services/refund.service.test.ts | Unit (mocked Prisma, real `Decimal` arithmetic) | ☐ |
 | src/controllers/refund.controller.ts | tests/controllers/refund.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/refund.routes.ts | tests/routes/refund.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/refund.routes.ts | tests/routes/refund.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/earning.service.ts | tests/services/earning.service.test.ts | Unit (mocked Prisma, real `Decimal` arithmetic) | ☐ |
 | src/controllers/earning.controller.ts | tests/controllers/earning.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/earning.routes.ts | tests/routes/earning.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/earning.routes.ts | tests/routes/earning.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/payout.service.ts | tests/services/payout.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/payout.controller.ts | tests/controllers/payout.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/payout.routes.ts | tests/routes/payout.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/payout.routes.ts | tests/routes/payout.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/promotion.schema.ts | tests/schemas/promotion.schema.test.ts | Unit | ☐ |
 | src/services/promotion.service.ts | tests/services/promotion.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/promotion.controller.ts | tests/controllers/promotion.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/promotion.routes.ts | tests/routes/promotion.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/promotion.routes.ts | tests/routes/promotion.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/jobs/paymentReminder.job.ts | — | Underlying logic covered via `notification.service.test.ts` (shared-config) call assertions; interval wrapper excluded | — |
 | src/jobs/monthlyPayout.job.ts | — | Underlying logic covered via `payout.service.test.ts`'s `generateMonthlyPayouts`/idempotency cases; interval wrapper excluded | — |
 
@@ -106,6 +112,9 @@ FRs: FR-PB-001–004, FR-PB-008. NFRs: NFR-007. **OWASP: A01:2021 – Broken Acc
 | Anchor is never reset on a subsequent recurring payment | mock the membership already has a `billingCycleAnchorDate` set from a prior cycle | call `handleChapaWebhook(...)` for this cycle's payment | `billingCycleAnchorDate` remains unchanged — tested as a distinct branch from the first-payment case, not inferred from it |
 | FAILED leaves the membership awaiting payment | mock a valid signature, `event: FAILED` | call `handleChapaWebhook(...)` | sets `Payment.status: FAILED`; no schedule generated; no automatic retry initiated — the student must re-`initiatePayment` |
 | Idempotent against a duplicate webhook delivery | mock `Payment.status` already `SUCCESS` | call `handleChapaWebhook(...)` again with the same payload | no duplicate schedule generation, no duplicate anchor-set — the handler checks terminal status before reprocessing (guards against Chapa's own retry behavior; ties OWASP A08:2021 — replay of a previously-processed integrity-bearing event) |
+| **[Phase 4 — Review §6.4, OWASP A02:2021] A processing failure never logs the raw webhook payload or provider reference in plaintext** | mock a downstream failure while handling an otherwise-valid webhook (e.g. `session.service.generateSessionsForCohort` throws) | call `handleChapaWebhook(rawBody, signature)`, inspect whatever this function passes to its logger/error handler on failure | the log/error payload contains a structured, redacted summary (e.g. `paymentId`, `event` type, a truncated/hashed reference) — the full raw `rawBody` and `Payment.providerTransactionId` are never passed to `console.*`/the logger verbatim; this extends the same non-leak discipline `error.middleware.test.ts` (9-3, shared-config) already enforces for stack traces to this file's payment-specific log sites |
+
+
 
 #### getPaymentHistory
 
@@ -227,6 +236,8 @@ FRs: FR-PB-007, FR-AD-012, FR-SP-048, Section 13. **OWASP: A01:2021 – Broken A
 | Proration is by sessions, never calendar days | mock a scenario where sessions-remaining and calendar-days-remaining would produce different answers | call `calculateProration(...)` | the resolved amount matches the sessions-based formula, not a calendar-day-based one |
 | A free make-up session is never double-counted as undelivered | mock a `SessionMiss`-triggered free make-up session already delivered (FR-MK-001), alongside genuinely undelivered sessions | call `calculateProration(...)` | `sessionsRemaining` counts only genuinely undelivered *billed* sessions — the make-up session is not additionally subtracted as if it were a separate undelivered slot (Section 13 Definition of Done #4) |
 | totalSessionsBilled is the current cycle's count, not a lifetime total | mock a cohort several billing cycles into its lifetime | call `calculateProration(...)` | `totalSessionsBilled` reflects only `sessionsPerWeek × 4` for the *current* 28-day cycle, not an accumulated multi-cycle count |
+| **[Phase 4 — Review §6.1] Round-half-up applied at exactly the third-decimal `.XX5` boundary** | mock `sessionsRemaining: 17`, `totalSessionsBilled: 400`, `payment.amount: "200.00"` — unrounded `(17/400) × 200 = 8.5` exactly at the cents digit; separately mock `sessionsRemaining: 53`, `totalSessionsBilled: 800`, `payment.amount: "500.00"` — unrounded `(53/800) × 500 = 33.125`, exactly `.XX5` one digit past the cents place | call `calculateProration(...)` for each case | the first resolves `amount: "8.50"` (nothing to round, confirms the exact-boundary input itself is handled cleanly); the second resolves `amount: "33.13"` — rounds up at exactly the midpoint, never down (banker's-rounding-to-even would incorrectly yield `"33.12"` here) and never left as the unrounded 3-decimal value. This mirrors the exact discipline `9-3-matching-cohorts.md §9.3`'s `recommendTutorsWithMatchPercent` case already applies to the match-percentage formula, now required here too per Review §6.1 |
+| **[Phase 4 — Review §6.1] Arithmetic is performed on the decimal-safe type throughout, never coerced through a native float** | inspect the implementation (static check as part of this test file's setup) or spy on `Number`/`parseFloat` if feasible | call `calculateProration(...)` with inputs chosen to expose float drift if present (e.g. `sessionsRemaining: 1`, `totalSessionsBilled: 3`, `payment.amount: "100.00"` — `1/3` is non-terminating in binary float) | resolves `amount: "33.33"` exactly, and no `Number()`/`parseFloat()`/native `/` operator is used on the `Decimal`-typed `amount` at any point in the call path — the project's decimal library (per `00-test-fixtures.md §1.2`'s convention) owns all arithmetic on money fields, matching the same architectural guarantee `frontend/9-7-payments-earnings.md §9.2`'s `money.test.ts` already enforces on the display side |
 
 #### createPendingRefund — **I1 fix**
 
@@ -244,6 +255,7 @@ FRs: FR-PB-007, FR-AD-012, FR-SP-048, Section 13. **OWASP: A01:2021 – Broken A
 | Refund not found — **I1 fix** | mock no matching `Refund` row | call `approveRefund(refundId, adminId)` | throws `ApiError(404, "Refund not found")` |
 | Cannot approve an already-actioned refund — **I1 fix** | mock a `Refund` row already at `status: APPROVED` | call `approveRefund(refundId, adminId)` | throws `ApiError(409, "This refund has already been actioned")` |
 | Cannot approve a rejected refund — **I1 fix** | mock a `Refund` row already at `status: REJECTED` | call `approveRefund(refundId, adminId)` | throws `ApiError(409, "This refund has already been actioned")` |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Approval writes an audit log entry** | mock a valid approval (first case above); spy on `auditLog.service.record` (see `00-agent-rules.md`'s audit-log convention) | call `approveRefund(refundId, adminId)` | `auditLog.service.record` called with `{ actor: adminId, action: 'REFUND_APPROVED', target: refundId, timestamp }` — a functional pass on the refund's own `status`/`amount` fields (the first case above) is not sufficient on its own; this is asserted as a genuinely separate expectation, per Rule 6's "no decorative security tags" |
 
 #### rejectRefund — **I1 fix**
 
@@ -253,6 +265,7 @@ FRs: FR-PB-007, FR-AD-012, FR-SP-048, Section 13. **OWASP: A01:2021 – Broken A
 | Refund not found | mock no matching `Refund` row | call `rejectRefund(refundId, adminId, "reason")` | throws `ApiError(404, "Refund not found")` |
 | Cannot reject an already-actioned refund | mock a `Refund` row already at `status: APPROVED` or `REJECTED` | call `rejectRefund(refundId, adminId, "reason")` | throws `ApiError(409, "This refund has already been actioned")` |
 | No money movement or side effects | mock a `PENDING` refund; spy on `earning.service`/Chapa-call sites | call `rejectRefund(...)` | no downstream money-movement call is made — only the `Refund` row's status/audit fields change |
+| **[Phase 4 — Review §6.4, OWASP A09:2021] Rejection writes an audit log entry including the reason** | mock a valid rejection (first case above); spy on `auditLog.service.record` | call `rejectRefund(refundId, adminId, "Student-caused disruption")` | `auditLog.service.record` called with `{ actor: adminId, action: 'REFUND_REJECTED', target: refundId, timestamp }` — the rejection reason itself is already persisted on the `Refund` row (`rejectionReason`), so the audit entry's `target` is sufficient to trace back to it without duplicating the reason string into the audit payload |
 
 ---
 
@@ -284,6 +297,7 @@ FRs: FR-MK-009, FR-AD-011, FR-TU-019. **OWASP: A04:2021 – Insecure Design (the
 | REDUCED_MAKEUP never applies to a reschedule | mock a session delivered via `reschedule.service.ts` (not a tutor-caused-miss make-up) | call `creditEarning(sessionId, tutorId, 'FULL')` for that session | resolves the full rate — reschedules always pay full share, confirming the reduced rate is never accidentally applied outside the tutor-caused-miss path |
 | REDUCED_MAKEUP never applies following a student-caused miss | mock a make-up-like session that actually followed a student-caused miss | call `creditEarning(...)` for it | resolves the `FULL` rate — the reduced rate applies only when the make-up followed the *tutor's own* miss (FR-MK-009) |
 | References the ScheduledSession as the hard FK | inspect the created row | call `creditEarning(sessionId, tutorId, 'FULL')` | `TutorEarning.scheduledSessionId === sessionId` |
+| **[Phase 4 — Review §6.1] Calling creditEarning twice for the same session does not double-credit** | mock a `TutorEarning` row already exists with `scheduledSessionId: sessionId` | call `creditEarning(sessionId, tutorId, 'FULL')` again (e.g. a retried job, or `markCompleted` accidentally invoked twice for the same session) | no second `TutorEarning` row is created and the existing amount is unchanged — the function checks for an existing row keyed on `scheduledSessionId` before writing, the same "check before write, not write-then-dedupe-later" discipline the webhook idempotency case above applies to payments |
 
 #### getEarningsForTutor
 
@@ -382,6 +396,8 @@ FRs: FR-AD-016. **OWASP: A01:2021 – Broken Access Control (Admin-only create),
 
 - [ ] `calculateProration`'s sessions-delivered formula is tested against the authoritative worked example from Doc 02 §13 (not just an arbitrarily invented set of numbers), and the make-up-session-not-double-counted case is tested with an actual delivered make-up session in the fixture, not merely asserted from the formula in the abstract.
 - [ ] `handleChapaWebhook`'s idempotency is tested by replaying the *identical* payload against an already-`SUCCESS` `Payment`, asserting zero additional side effects (no second `generateSessionsForCohort` call, no anchor reset) — not just that the endpoint returns `200` twice.
+- [ ] **[Phase 4]** The exact `.XX5` rounding-boundary cases (`calculateProration`, and the frontend `money.test.ts` equivalent) use inputs whose unrounded intermediate value was hand-computed and checked against the worked example in this doc — not an input picked by trial-and-error until the test happened to pass against whatever the implementation currently does.
+- [ ] **[Phase 4]** `REFUND_APPROVED`/`REFUND_REJECTED` audit entries are asserted as calls genuinely separate from the `Refund.status` assertions in the same test case — a shared mock/spy that only checks "something was called" would not catch a regression where the audit call is silently dropped while the refund itself still processes correctly.
 - [ ] `verifyWebhookSignature`'s tamper-rejection case mutates the actual raw bytes being verified, not a re-serialized copy — a test that re-stringifies JSON before comparing could pass even with a byte-sensitive HMAC bug in the real implementation.
 - [ ] `creditEarning`'s `REDUCED_MAKEUP` rate is tested as a genuinely separate branch from both the reschedule-pays-full case and the student-caused-miss-pays-full case — three distinct scenarios, not two collapsed into "make-up sessions pay less."
 - [ ] `createAndActivateConfig`'s atomic deactivate-then-activate is tested by asserting a single `$transaction` call wraps both operations — not by checking the end state alone, which wouldn't catch a non-atomic two-step write that could race.

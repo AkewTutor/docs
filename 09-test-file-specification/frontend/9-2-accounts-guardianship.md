@@ -4,6 +4,8 @@
 
 **Depends on:** Shared Config (hard — every page/guard/hook here assumes `9-1`'s foundation is already tested and working).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -27,29 +29,29 @@
 
 ### 9.1 Test File Map
 
-| Source file | Test file | Notes |
-|---|---|---|
-| src/hooks/useStudentProfile.ts | tests/hooks/useStudentProfile.test.ts | mandatory (hook rule) |
-| src/hooks/useGuardianship.ts | tests/hooks/useGuardianship.test.ts | mandatory — full blocks below |
-| src/hooks/useTutorProfile.ts | tests/hooks/useTutorProfile.test.ts | mandatory |
-| src/hooks/useAvailability.ts | tests/hooks/useAvailability.test.ts | mandatory |
-| src/hooks/useSubjects.ts | tests/hooks/useSubjects.test.ts | mandatory |
-| src/hooks/useAdminTutorVerification.ts | tests/hooks/useAdminTutorVerification.test.ts | mandatory |
-| src/hooks/useAdminPeople.ts | tests/hooks/useAdminPeople.test.ts | mandatory |
-| src/pages/InviteActivationPage.tsx | tests/pages/InviteActivationPage.test.tsx | non-trivial: password-match check, role-dependent redirect |
-| src/pages/parent/AddStudentPage.tsx | tests/pages/AddStudentPage.test.tsx | non-trivial: grade-conditional confirmation copy |
-| src/pages/parent/GuardianSettingsPage.tsx, student/GuardianSettingsPage.tsx | tests/pages/GuardianSettingsPage.test.tsx | non-trivial: dual-mode rendering, revoke confirmation gate |
-| src/components/GuardianInviteStatusCard.tsx | tests/components/GuardianInviteStatusCard.test.tsx | non-trivial: conditional "Resend" visibility |
-| src/components/SubjectRankingForm.tsx | tests/components/SubjectRankingForm.test.tsx | non-trivial: live 2-item cap enforcement (8-2 flags this explicitly) |
-| src/components/AvailabilityCalendar.tsx | tests/components/AvailabilityCalendar.test.tsx | non-trivial: grid interaction, occupied-cell disable |
-| src/pages/admin/TutorVerificationPage.tsx, components/TutorVerificationCard.tsx | tests/pages/TutorVerificationPage.test.tsx | non-trivial: required-reason gate on reject |
-| src/pages/admin/PeopleManagementPage.tsx | tests/pages/PeopleManagementPage.test.tsx | non-trivial: required-reason gate on suspend |
-| src/pages/admin/SubjectManagementPage.tsx | tests/pages/SubjectManagementPage.test.tsx | non-trivial: shows both active/inactive, flagged hook addition |
-| src/pages/student/AcademicProfilePage.tsx | tests/pages/AcademicProfilePage.test.tsx | non-trivial: two independently-submitted forms |
-| src/pages/tutor/TutorProfilePage.tsx | tests/pages/TutorProfilePage.test.tsx | non-trivial: `verificationStatus` is read-only, never editable |
-| src/pages/tutor/AvailabilityPage.tsx, SubjectRankingPage.tsx | — | thin page wrappers around the components above; covered by the component tests + one smoke test confirming wiring, not separately detailed |
-| src/pages/student/StudentDashboardPage.tsx, tutor/TutorDashboardPage.tsx | — | pure composition of already-tested widgets (see §9.8 dismissal note for FR-SP-011–016/FR-TU-011) — not separately detailed |
-| src/components/StudentSidebar.tsx, TutorSidebar.tsx, ParentSidebar.tsx, AdminSidebar.tsx | tests/components/Sidebars.test.tsx | non-trivial: active-item highlighting per role + logout wiring (grouped into one file, see §9.6) |
+| Source file | Test file | Test type | Notes |
+|---|---|---|---|
+| src/hooks/useStudentProfile.ts | tests/hooks/useStudentProfile.test.ts | Hook | mandatory (hook rule) |
+| src/hooks/useGuardianship.ts | tests/hooks/useGuardianship.test.ts | Hook | mandatory — full blocks below |
+| src/hooks/useTutorProfile.ts | tests/hooks/useTutorProfile.test.ts | Hook | mandatory |
+| src/hooks/useAvailability.ts | tests/hooks/useAvailability.test.ts | Hook | mandatory |
+| src/hooks/useSubjects.ts | tests/hooks/useSubjects.test.ts | Hook | mandatory |
+| src/hooks/useAdminTutorVerification.ts | tests/hooks/useAdminTutorVerification.test.ts | Hook | mandatory |
+| src/hooks/useAdminPeople.ts | tests/hooks/useAdminPeople.test.ts | Hook | mandatory |
+| src/pages/InviteActivationPage.tsx | tests/pages/InviteActivationPage.test.tsx | Component | non-trivial: password-match check, role-dependent redirect |
+| src/pages/parent/AddStudentPage.tsx | tests/pages/AddStudentPage.test.tsx | Component | non-trivial: grade-conditional confirmation copy |
+| src/pages/parent/GuardianSettingsPage.tsx, student/GuardianSettingsPage.tsx | tests/pages/GuardianSettingsPage.test.tsx | Component | non-trivial: dual-mode rendering, revoke confirmation gate |
+| src/components/GuardianInviteStatusCard.tsx | tests/components/GuardianInviteStatusCard.test.tsx | Component | non-trivial: conditional "Resend" visibility |
+| src/components/SubjectRankingForm.tsx | tests/components/SubjectRankingForm.test.tsx | Component | non-trivial: live 2-item cap enforcement (8-2 flags this explicitly) |
+| src/components/AvailabilityCalendar.tsx | tests/components/AvailabilityCalendar.test.tsx | Component | non-trivial: grid interaction, occupied-cell disable |
+| src/pages/admin/TutorVerificationPage.tsx, components/TutorVerificationCard.tsx | tests/pages/TutorVerificationPage.test.tsx | Component | non-trivial: required-reason gate on reject |
+| src/pages/admin/PeopleManagementPage.tsx | tests/pages/PeopleManagementPage.test.tsx | Component | non-trivial: required-reason gate on suspend |
+| src/pages/admin/SubjectManagementPage.tsx | tests/pages/SubjectManagementPage.test.tsx | Component | non-trivial: shows both active/inactive, flagged hook addition |
+| src/pages/student/AcademicProfilePage.tsx | tests/pages/AcademicProfilePage.test.tsx | Component | non-trivial: two independently-submitted forms |
+| src/pages/tutor/TutorProfilePage.tsx | tests/pages/TutorProfilePage.test.tsx | Component | non-trivial: `verificationStatus` is read-only, never editable |
+| src/pages/tutor/AvailabilityPage.tsx, SubjectRankingPage.tsx | — | — | thin page wrappers around the components above; covered by the component tests + one smoke test confirming wiring, not separately detailed |
+| src/pages/student/StudentDashboardPage.tsx, tutor/TutorDashboardPage.tsx | — | — | pure composition of already-tested widgets (see §9.8 dismissal note for FR-SP-011–016/FR-TU-011) — not separately detailed |
+| src/components/StudentSidebar.tsx, TutorSidebar.tsx, ParentSidebar.tsx, AdminSidebar.tsx | tests/components/Sidebars.test.tsx | Component | non-trivial: active-item highlighting per role + logout wiring (grouped into one file, see §9.6) |
 
 ---
 

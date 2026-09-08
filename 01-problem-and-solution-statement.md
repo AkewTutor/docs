@@ -18,7 +18,7 @@
 ---
 
 > ℹ️ **How this document came to exist**
-> AKEWTutor's original SRS (v3.0/v3.1) combined problem/solution narrative and functional requirements into a single document. This file extracts and separates that narrative layer, matching the project's standard two-document structure. Sections **1.5** (Scope) and **1.7** (Assumptions) are carried over directly from the original SRS with no changes in substance. Sections **1.1, 1.2, 1.4, 1.6, and 1.8** did not previously exist as separate written content — they are reconstructed here based on what the SRS's decisions and scope already imply. **Please review these five sections against your actual intent and correct anything that doesn't match your original reasoning** — particularly 1.4, where a couple of rationale points are genuinely inferred rather than sourced, and are flagged inline.
+> AKEWTutor's original SRS (v3.0/v3.1) combined problem/solution narrative and functional requirements into a single document. This file extracts and separates that narrative layer, matching the project's standard two-document structure. Sections **1.5** (Scope) and **1.7** (Assumptions) are carried over directly from the original SRS with no changes in substance. Sections **1.1, 1.2, 1.4, 1.6, and 1.8** did not previously exist as separate written content — they were reconstructed based on what the SRS's decisions and scope already imply, and were confirmed by the project owner as matching original intent (in-conversation confirmation, September 2026 — see `00-pending-client-actions.md`, Action 2, closed). No further review of these five sections is needed.
 
 ---
 
@@ -54,7 +54,7 @@ An Admin console sits behind all of this, giving the operations team full contro
 
 ### 1.4 Why This Approach (vs. alternatives considered)
 
-> ⚠️ This section is reconstructed from the decisions already recorded in the v3.1 SRS. Where the original rationale wasn't documented, that's flagged explicitly below — please confirm or correct.
+> ✅ This section is reconstructed from the decisions already recorded in the v3.1 SRS. Confirmed by the project owner as matching original intent, including the one previously-inferred rationale below (FC-01) — see the confirmation note on that item.
 
 **Admin-mediated approval for every match, rather than fully automated instant booking.** Every 1-to-1 selection and every 1-to-3/1-to-5 auto-match still requires Admin sign-off before payment and scheduling are confirmed (Sections 8, 11.2 of the SRS). This was chosen over a fully automated instant-booking flow because the platform connects minors with adult tutors — a human review step before money and scheduling are finalized is a deliberate safety control, not just a workflow inefficiency to be automated away later.
 
@@ -64,7 +64,7 @@ An Admin console sits behind all of this, giving the operations team full contro
 
 **A hard two-subject cap per tutor, rather than unlimited subjects.** Tutors rank up to two subjects, with the second only engaged as a system-triggered fallback when a primary-subject search fails (Section 6.2). This was chosen to keep tutor profiles focused and matching quality high, rather than allowing a tutor to spread thin across many subjects at the cost of teaching depth in any one of them.
 
-**Removal of the tutor rating/review system, replaced with achievement-based badges.** *(Flagged as inferred — the SRS records that this was removed, "Feature Change FC-01," but does not record the reasoning.)* The likely rationale — common in comparable platforms — is that public, subjective star-ratings can unfairly and disproportionately affect a tutor's income based on a small number of reviews, while an objective, achievement/experience-based badge system rewards consistent performance without exposing tutors to that risk. **This is a reasonable guess, not a confirmed fact — please correct if the actual reasoning was different.**
+**Removal of the tutor rating/review system, replaced with achievement-based badges.** *(The SRS records that this was removed, "Feature Change FC-01," but did not originally record the reasoning; the rationale below was inferred and has since been confirmed by the project owner as correct — September 2026.)* Public, subjective star-ratings can unfairly and disproportionately affect a tutor's income based on a small number of reviews, while an objective, achievement/experience-based badge system rewards consistent performance without exposing tutors to that risk.
 
 **Chapa, Geez SMS, Brevo, and Cloudflare R2 as the third-party stack, rather than building custom equivalents.** These were chosen for direct compatibility with the Ethiopian market — ETB-denominated payment processing, local SMS delivery — while relying on managed infrastructure for storage and email rather than building and maintaining that infrastructure in-house for an initial release.
 
@@ -120,7 +120,7 @@ An Admin console sits behind all of this, giving the operations team full contro
 
 ### 1.8 Version Roadmap
 
-> ⚠️ This section is newly drafted for planning purposes, inferred from the "explicitly out of scope for this phase" language already used throughout the SRS. It has not been confirmed as an official roadmap by the client — treat it as a starting point for discussion, not a commitment.
+> ✅ This section is newly drafted for planning purposes, inferred from the "explicitly out of scope for this phase" language already used throughout the SRS. Confirmed by the project owner as matching intent (September 2026) — treated as a real staging plan for future phases, not just a discussion starting point.
 
 The SRS repeatedly frames certain exclusions as scoped to "this phase" rather than permanently out of scope, which implies a staged path is already anticipated even though it was never written down as a formal roadmap. A plausible staging, based entirely on what's already marked as deferred:
 

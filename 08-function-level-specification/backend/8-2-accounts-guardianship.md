@@ -16,6 +16,21 @@
 
 ### src/services/studentProfile.service.ts (new)
 
+#### assertAccountStatusAllowsAccess
+
+> ✨ **Gap closed (Pre-Implementation Hardening).** `04-database-and-data-model.md §4.2` (StudentProfile) previously stated the `GUARDIAN_REQUIRED_HOLD` hold "is enforced at the application layer against every booking/class-access check" without naming the function that does it — leaving `matching-cohorts` and `class-delivery-library` each free to implement (or skip) the check independently. This is the single named enforcement point every other feature calls.
+
+| Field | Detail |
+|---|---|
+| Signature | `assertAccountStatusAllowsAccess(studentId: string): Promise<void>` |
+| Purpose | The one platform-wide gate for FR-AC-008's "guardian required" hold. Called by any other feature's function *before* it performs a booking- or class-access-relevant action on behalf of a student — it is not itself a route handler and has no corresponding endpoint. |
+| Throws | `ApiError(403, "This student's account is on hold pending a guardian — booking and class access are unavailable until a guardian is linked")` — `StudentProfile.accountStatus !== 'ACTIVE'` (covers both `PENDING_ACTIVATION` and `GUARDIAN_REQUIRED_HOLD`; a not-yet-activated Grades 1–5 student and a hold-state student get the identical error, since neither should be able to trigger a booking or session-join action). |
+| Side effects | Read-only — a single `StudentProfile.findUnique` on `accountStatus`. Resolves with no return value when the account is `ACTIVE`. |
+| Callers (cross-feature, soft dependency — service call, no FK, per `feature-decomposition.md §1.1`) | `matching-cohorts`: `matching.service.ts → selectTutor`, `triggerNoExactMatch`, `requestGroupFormat` (all three booking-entry points, called first, before any `MatchRequest`/`Cohort` row is created). `class-delivery-library`: `session.service.ts → assertSessionAccessAllowed` (see `8-4-class-delivery-library.md`), called before `GET /sessions` / `GET /sessions/:sessionId` return session data to a Student/Parent caller. |
+| Not called by | Admin-facing reads/actions (Admin must always be able to see and manage a held account) and the guardianship endpoints themselves (a parent must be able to view/manage the hold state and send a new invite while the student is on hold — that is the intended way out of the state, so gating it here would create a deadlock). |
+
+Test file: `tests/services/studentProfile.service.test.ts`
+
 #### getProfile
 
 | Field | Detail |
@@ -179,7 +194,19 @@ Mounted at `/guardianship`.
 | Field | Detail |
 |---|---|
 | Signature | `getProfile(tutorId: string): Promise<TutorProfileDTO>` · `updateProfile(tutorId: string, input): Promise<Partial<TutorProfileDTO>>` |
-| Edge cases | `updateProfile` never allows self-service edits to `verificationStatus` — that field is owned exclusively by `adminTutorVerification.service.ts`. |
+| Edge cases | `updateProfile` never allows self-service edits to `verificationStatus` — that field is owned exclusively by `adminTutorVerification.service.ts`, with the sole exception of `resubmitVerification` below (a narrow, single-purpose transition, not a general re-opening of the field). |
+
+Test file: `tests/services/tutorProfile.service.test.ts`
+
+#### resubmitVerification
+
+| Field | Detail |
+|---|---|
+| Signature | `resubmitVerification(tutorId: string): Promise<{ id: string; verificationStatus: 'PENDING' }>` |
+| Purpose | Issue 2 fix — names the mechanism `10-e2e-specification.md §10.8` (E2E-6) and `09-test-file-specification/phase7-review-signoff.md` flagged as missing: a tutor-initiated way to re-queue a `REJECTED` application after correcting their profile via the existing `updateProfile`. |
+| Throws | `ApiError(409, "Only a rejected application can be resubmitted")` — `verificationStatus` is not currently `REJECTED`. |
+| Side effects | Sets `verificationStatus: PENDING`, and resets `verifiedAt: null, verifiedById: null` — the previous rejection's Admin/timestamp no longer describes the current (re-pending) state. This is the one narrow case where `tutorProfile.service.ts` is allowed to write `verificationStatus`; every other transition still belongs exclusively to `adminTutorVerification.service.ts`. Does not itself touch any other profile field — the tutor corrects those separately via `PATCH /tutors/me/profile` first. |
+| Edge cases | Calling this while `verificationStatus` is `PENDING` or `VERIFIED` throws the same 409 — resubmission is only ever a `REJECTED → PENDING` transition. |
 
 Test file: `tests/services/tutorProfile.service.test.ts`
 
@@ -201,6 +228,7 @@ Test file: `tests/services/tutorProfile.service.test.ts` — includes the third-
 |---|---|---|
 | getMyProfile | `tutorProfileService.getProfile(req.user.id)` | 200 |
 | updateProfile | `tutorProfileService.updateProfile(req.user.id, req.body)` | 200 |
+| resubmitVerification | `tutorProfileService.resubmitVerification(req.user.id)` | 200 |
 | rankSubjects | `tutorProfileService.rankSubjects(req.user.id, req.body.subjects)` | 200 |
 
 ### src/routes/tutorProfile.routes.ts (new)
@@ -209,6 +237,7 @@ Test file: `tests/services/tutorProfile.service.test.ts` — includes the third-
 |---|---|---|---|
 | GET | /me/profile | `authMiddleware` | getMyProfile |
 | PATCH | /me/profile | `authMiddleware, validate(updateTutorProfileSchema)` | updateProfile |
+| POST | /me/resubmit-verification | `authMiddleware` | resubmitVerification |
 | PUT | /me/subjects | `authMiddleware, validate(rankSubjectsSchema)` | rankSubjects |
 
 Mounted at `/tutors`.

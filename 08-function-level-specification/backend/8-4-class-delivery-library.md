@@ -27,6 +27,20 @@
 
 Test file: `tests/services/session.service.test.ts`
 
+#### assertSessionAccessAllowed
+
+> ✨ **Gap closed (Pre-Implementation Hardening).** `GET /sessions` and `GET /sessions/:sessionId` previously had no named function backing them in this document — per the established "Status read path" pattern elsewhere in Doc 08, a plain, unnamed Prisma read was implied. That left the class-access half of FR-AC-008's hold rule with nothing to actually call. This is now a real, named function both read endpoints go through.
+
+| Field | Detail |
+|---|---|
+| Signature | `assertSessionAccessAllowed(callerId: string, callerRole: 'STUDENT'\|'PARENT'\|'TUTOR'\|'ADMIN', sessionId: string): Promise<ScheduledSession>` |
+| Purpose | The single access-control gate for reading a session (`GET /sessions`, `GET /sessions/:sessionId`) — resolves the session row only if the caller is entitled to see it, and is the class-access half of the `GUARDIAN_REQUIRED_HOLD` rule (the booking half lives in `matching-cohorts`, see `8-3-matching-cohorts.md`). |
+| Throws | `ApiError(403, ...)` — for a `STUDENT` or `PARENT` caller, via `studentProfile.service.ts → assertAccountStatusAllowsAccess(studentId)` (cross-feature call, no FK, per `feature-decomposition.md §1.1`), called before the row is returned — **not** called for `TUTOR`/`ADMIN` callers, since an on-hold student's tutor and Admin must still be able to see the session (e.g. to see why a class isn't happening, or to manage the hold). `ApiError(403, \"Not authorized to view this session\")` — caller has no current or historical `CohortMembership`/tutor assignment on the session's `Cohort` at all (the ordinary IDOR case, independent of hold status). `ApiError(404, ...)` — `sessionId` does not exist. |
+| Side effects | Read-only. |
+| Edge cases | An on-hold student's *existing* sessions still exist in the database (per FR-AC-008, nothing is deleted) — this function is what actually prevents them from being read back while the hold is active, not a passive side effect of the data being gone. Once a new guardian accepts and `accountStatus` returns to `ACTIVE`, the exact same sessions become visible again with no additional migration or backfill needed. |
+
+Test file: `tests/services/session.service.test.ts`
+
 #### provideJitsiLink
 
 | Field | Detail |

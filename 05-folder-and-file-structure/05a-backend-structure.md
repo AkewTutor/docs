@@ -73,7 +73,7 @@ These exist before any feature and are not owned by one feature's team.
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
 | `src/schemas/studentProfile.schema.ts` | Zod schema | updateAcademicProfileSchema (grade, school, subjects, goals, language, schedule, teachingStyle, budget, format) | — |
-| `src/services/studentProfile.service.ts` | Service | getProfile, updateAcademicProfile, updateBasicProfile (photo/name) | prisma |
+| `src/services/studentProfile.service.ts` | Service | getProfile, updateAcademicProfile, updateBasicProfile (photo/name), assertAccountStatusAllowsAccess (GUARDIAN_REQUIRED_HOLD gate, called cross-feature by matching-cohorts and class-delivery-library — gap closed) | prisma |
 | `src/controllers/studentProfile.controller.ts` | Controller | getMyProfile, updateAcademicProfile, updateBasicProfile handlers | studentProfile.service.ts |
 | `src/routes/studentProfile.routes.ts` | Route | mounts `/students/me/*`; `authMiddleware` | studentProfile.controller.ts |
 | `src/schemas/guardianship.schema.ts` | Zod schema | addStudentSchema (grade required), inviteGuardianSchema, revokeRelationshipSchema | — |
@@ -114,7 +114,7 @@ These exist before any feature and are not owned by one feature's team.
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
 | `src/schemas/matching.schema.ts` | Zod schema | searchTutorsQuerySchema (1-to-1 filters), selectTutorSchema, noExactMatchSchema | — |
-| `src/services/matching.service.ts` | Service | searchOneToOneTutors, recommendTutorsWithMatchPercent, selectTutor (Path A), triggerNoExactMatch (Path B), requestGroupFormat (Path C entry) | prisma, cohort.service.ts |
+| `src/services/matching.service.ts` | Service | searchOneToOneTutors, recommendTutorsWithMatchPercent, selectTutor (Path A), triggerNoExactMatch (Path B), requestGroupFormat (Path C entry) — all three booking-entry functions call `studentProfile.service.ts`'s `assertAccountStatusAllowsAccess` first (GUARDIAN_REQUIRED_HOLD gate — gap closed) | prisma, cohort.service.ts, studentProfile.service.ts (accounts-guardianship) |
 | `src/controllers/matching.controller.ts` | Controller | searchTutors, getRecommendations, selectTutor, noExactMatch, requestGroupFormat handlers | matching.service.ts |
 | `src/routes/matching.routes.ts` | Route | mounts `/matching/*`; `authMiddleware` | matching.controller.ts |
 | `src/services/cohort.service.ts` | Service | formOrJoinCohort (Path C grouping), approveCohort, rejectCohort (re-queue logic per path), tutorExitContinuity (drop-out/suspension), endCohort | prisma, tutorExclusion logic |
@@ -144,7 +144,7 @@ These exist before any feature and are not owned by one feature's team.
 | File | Type | Purpose | Depends on |
 |---|---|---|---|
 | `src/schemas/session.schema.ts` | Zod schema | provideJitsiLinkSchema | — |
-| `src/services/session.service.ts` | Service | generateSessionsForCohort, provideJitsiLink (≥30min-before check), markCompleted | prisma |
+| `src/services/session.service.ts` | Service | generateSessionsForCohort, provideJitsiLink (≥30min-before check), markCompleted, assertSessionAccessAllowed (session-read gate; calls accounts-guardianship's assertAccountStatusAllowsAccess for Student/Parent callers — gap closed) | prisma, studentProfile.service.ts (accounts-guardianship) |
 | `src/controllers/session.controller.ts` | Controller | listMySessions, provideLink, getSession handlers | session.service.ts |
 | `src/routes/session.routes.ts` | Route | mounts `/sessions/*`; `authMiddleware` | session.controller.ts |
 | `src/schemas/recordingConsent.schema.ts` | Zod schema | acknowledgeConsentSchema | — |

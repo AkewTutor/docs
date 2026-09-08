@@ -6,6 +6,12 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 **Owns:** XPLedgerEntry, Badge, StudentBadge, TutorBadge, Streak, Challenge, ChallengeProgress. **Depends on:** `accounts-guardianship` (hard); soft-integrates with `class-delivery-library` (XP-award trigger on class-attended — no FK, event-based only).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
+**Integration (persistence) tier for this module lives in this same file, added Phase 5.5** — see §9.12 below for real leaderboard aggregation and concurrent-ledger-write guarantees, tested against a real database. (Per the locked plan's Phase 5 sizing rule: this module's Unit + HTTP-contract content is small enough — under the ~400-line threshold even with this tier added — that a sibling file wasn't warranted, unlike the other four Phase 5 modules.)
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -27,16 +33,16 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/services/xp.service.ts | tests/services/xp.service.test.ts | Unit (mocked Prisma, mocked `streak.service.updateStreakOnActivity`) | ☐ |
 | src/schemas/xp.schema.ts | tests/schemas/xp.schema.test.ts | Unit — **I2 fix** | ☐ |
 | src/controllers/xp.controller.ts | tests/controllers/xp.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/xp.routes.ts | tests/routes/xp.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/xp.routes.ts | tests/routes/xp.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/badge.service.ts | tests/services/badge.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/schemas/badge.schema.ts | tests/schemas/badge.schema.test.ts | Unit — **I2 fix** | ☐ |
 | src/controllers/badge.controller.ts | tests/controllers/badge.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/badge.routes.ts | tests/routes/badge.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/badge.routes.ts | tests/routes/badge.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/streak.service.ts | tests/services/streak.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/schemas/challenge.schema.ts | tests/schemas/challenge.schema.test.ts | Unit | ☐ |
 | src/services/challenge.service.ts | tests/services/challenge.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/challenge.controller.ts | tests/controllers/challenge.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/challenge.routes.ts | tests/routes/challenge.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/challenge.routes.ts | tests/routes/challenge.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 
 ---
 
@@ -239,6 +245,87 @@ FRs: FR-SP-040, FR-GA-004, FR-AD-018 (`createChallenge` is the Admin-facing "man
 - **Exact wiring between `class-delivery-library`'s session-completion event and `xp.service.awardXP`** — this is a soft, event-based integration with no FK (Feature Decomposition §1.1); which file calls `awardXP('CLASS_ATTENDED')` and when is confirmed at build time, not hard-asserted here beyond `awardXP` itself behaving correctly once called.
 - **Real-time leaderboard push/websocket updates** — not part of Docs 02/06/08; the backend contract here is a computed-on-request `GET`, per Doc 04 §4.0's explicit no-stored-table decision.
 - **awardXP's own error-swallowing responsibility** — Doc 8-6 notes an XP-award failure must never block the triggering action (e.g. marking a class complete), but this is a responsibility of the *calling* code in another feature (e.g. `session.service.ts`), not something `xp.service.ts` itself needs to catch internally; that caller-side behavior is out of scope for this file and belongs with whichever feature's test doc owns the caller.
+
+---
+
+## Integration (Persistence) Tier
+
+**Created by:** Phase 5.5 of `09-redesign-implementation-plan.md`, per Review §6.2 item 5 (final module in the persistence-tier priority order).
+
+### 9.12 Why these cases exist here, and what they don't duplicate
+
+§9.2's Unit tier already proves — against a **mocked** Prisma client — that `getLeaderboard` constructs the right query filter (grade-scoped, period-windowed) and that `awardXP` never mutates a running total. It cannot prove that a real `SUM(amount)` aggregation over real `XPLedgerEntry` rows actually nets out correctly across many entries (including negative `adminAdjustXP` corrections), that the grade filter really excludes a real cross-grade student's real rows rather than a mock simply never being asked for them, or — the specific risk Review §6.2 item 5 names — that a burst of genuinely concurrent `awardXP` inserts against the real database doesn't silently lose a write under load. A mocked `create` call always "succeeds" by construction; only a real database can show a lost row.
+
+**In scope (per Review §6.2 item 5):** leaderboard aggregation correctness against real ledger rows, and concurrent ledger writes under real simultaneous DB access.
+
+**Also included, flagged as a deliberate small addition beyond the review's literal wording** (consistent with the precedent `9-3-matching-cohorts-persistence.md §9.19` set for `selectTutor`'s double-submit race): a concurrent-write race check on `streak.service.updateStreakOnActivity`. `Streak.studentId` is a real unique (1:1) constraint per `04-database-and-data-model.md §4.2`, and `updateStreakOnActivity` is a read-`lastActivityDate`-then-write function — exactly the read-modify-write shape that looks correct against a mock (which always hands back whatever the test set up) and can silently double-increment or lose an increment under genuine concurrent activity events (e.g., a class-completion and a weekly-assessment-completion firing for the same student at the same moment). It's included here rather than in a separate note because it shares this section's fixtures and rationale.
+
+**Deliberately not in this section:**
+- `badge.service.ts`'s re-award ambiguity (§9.4's flagged, not-hard-asserted case) — this tier doesn't resolve an open behavioral decision the plan explicitly says isn't this phase's to make; it only confirms the two real unique constraints the schema already promises (below), independent of which behavior the implementer eventually picks for the "already has it" path.
+- `challenge.service.ts`'s `trackProgress` upsert logic — its `ChallengeProgress(studentId, challengeId)` unique composite is confirmed at the schema level below, but the upsert-vs-race behavior itself carries materially lower risk than the ledger/streak cases above (a challenge-progress double-count is a minor gamification inconsistency, not a leaderboard-wide correctness or security issue), so it doesn't get its own dedicated race case here.
+- Real-time push/websocket delivery of leaderboard updates — unchanged from §9.11's existing exclusion; still not part of Docs 02/06/08.
+
+### Test environment convention (binding on every case below)
+
+Same convention as every other Phase 5 persistence tier — real database, no silent mock fallback (`00-agent-rules.md` Rule 7); test isolation via rollback/truncate; real Prisma client and real service functions; every FK seeded via `00-test-fixtures.md`'s `accounts-guardianship.factory.ts` (`buildStudentProfile`) using real, just-created ids, per `00-test-fixtures.md §1.1`.
+
+### 9.13 Test File Map (persistence)
+
+| Source file | Test file | Test type | Written before code? |
+|---|---|---|---|
+| src/services/xp.service.ts | tests/integration/xp.service.persistence.test.ts | Integration (persistence) | ☐ |
+| src/services/badge.service.ts | tests/integration/badge.service.persistence.test.ts | Integration (persistence) | ☐ |
+| src/services/streak.service.ts | tests/integration/streak.service.persistence.test.ts | Integration (persistence) | ☐ |
+
+### 9.14 Test Case Detail — xp.service.persistence.test.ts
+
+FRs: FR-SP-039, FR-GA-002, FR-GA-006. Traces to `04-database-and-data-model.md §4.2` (XPLedgerEntry) and its "single source of truth ... never stored pre-joined" leaderboard note.
+
+#### getLeaderboard — real aggregation
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Real SUM nets multiple ledger entries correctly, including a negative adjustment | seed a real `StudentProfile`; write three real `XPLedgerEntry` rows for them via `awardXP` (`CLASS_ATTENDED` ×2 = 40) plus one real `adminAdjustXP(studentId, adminId, -15, "Correction")` | call `getLeaderboard(callerId, 'STUDENT', undefined, 'WEEKLY')` | the student's aggregated total is exactly `25` (`20 + 20 - 15`), read from a real grouped query over the four real rows — not a mocked `SUM` return value |
+| Grade-scoping genuinely excludes a real cross-grade student's real rows | seed a real Grade 8 `StudentProfile` and a real Grade 10 `StudentProfile`, each with real `XPLedgerEntry` rows via `awardXP` | call `getLeaderboard` as the Grade 8 student | the resolved `rankings` contains the Grade 8 student and **not** the Grade 10 student — confirmed against a real cross-grade row that genuinely exists in the table, not merely absent from the fixture |
+| Only entries inside the period window are aggregated | seed one real `XPLedgerEntry` with `createdAt` inside the current week and one with `createdAt` 10 days in the past (outside a `WEEKLY` window) | call `getLeaderboard(..., 'WEEKLY')` | the resolved total reflects only the in-window entry — a real date-range filter applied to real rows, not a mocked query's pre-selected result set |
+
+#### awardXP — real concurrent ledger writes (Review §6.2 item 5, named case)
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| **A burst of concurrent awards for one student is never lost** | seed a real `StudentProfile` | issue 20 concurrent `awardXP(studentId, undefined, 'CLASS_ATTENDED')` calls (`Promise.all`, separate DB connections so the inserts genuinely interleave) | a fresh `count()` against `XPLedgerEntry` for this student returns **exactly 20** real rows, and a fresh `SUM(amount)` returns exactly `400` (`20 × 20`) — proving no concurrent insert was silently dropped under real simultaneous write load, which a mocked `create` (which always "succeeds" by construction) can never demonstrate |
+| Concurrent awards across two different students don't cross-contaminate | seed two real `StudentProfile`s | issue 10 concurrent `awardXP` calls for student A interleaved with 10 concurrent calls for student B (`Promise.all` across both sets at once) | fresh per-student queries show exactly 10 real rows and a `SUM` of `200` for each student independently — no row is attributed to the wrong `studentId` under concurrent write pressure |
+
+### 9.15 Test Case Detail — badge.service.persistence.test.ts / streak.service.persistence.test.ts
+
+FRs: FR-GA-003, FR-GA-005, FR-GA-006. Traces to `04-database-and-data-model.md §4.2` (StudentBadge, TutorBadge, ChallengeProgress, Streak).
+
+#### Real unique-constraint confirmation
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| `StudentBadge(studentId, badgeId)` composite is real | seed a real `StudentProfile`, a real `Badge`; insert one real `StudentBadge` row directly via Prisma | attempt a second direct insert with the identical `(studentId, badgeId)` pair | rejected by the real unique constraint (`P2002`) — schema-level confirmation, independent of which behavior `awardStudentBadge` itself eventually implements for this case (§9.4's flagged item) |
+| `TutorBadge(tutorId, badgeId)` composite is real | same pattern, `TutorProfile`/`Badge` | second identical-pair insert | rejected by the real unique constraint |
+| `ChallengeProgress(studentId, challengeId)` composite is real | seed a real `StudentProfile`, a real `Challenge`; insert one real `ChallengeProgress` row | second identical-pair insert | rejected by the real unique constraint |
+
+#### updateStreakOnActivity — real concurrent-update race (flagged addition, see §9.12)
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| **Two simultaneous activity events for the same student don't double-count or corrupt the streak** | seed a real `Streak(studentId, currentStreakDays: 4, lastActivityDate: yesterday)` | issue two concurrent `updateStreakOnActivity(studentId, today)` calls (`Promise.all`, two DB connections) | both calls resolve without error; a fresh query shows **exactly one** `Streak` row for this student (the real `studentId` unique constraint prevents a second row from ever being created) with `currentStreakDays: 5` — not `6` (a lost-update race double-applying the increment) and not still `4` (a lost-update race where one write clobbers the other without applying it) |
+
+### 9.16 Coverage Honesty Check (persistence addendum — per PR Steward, at review time)
+
+- [ ] Every case in §9.14–§9.15 above was run against an actually-reachable real test database at review time.
+- [ ] The concurrent-award case's row count and `SUM` were both checked — a test that only checked `SUM` could pass even if two rows merged/collided in a way that happened to preserve the total by coincidence.
+- [ ] The streak concurrency case was observed to genuinely interleave at the database level at least once across repeated local runs, not merely "passed once" — consistent with the same requirement `9-3-matching-cohorts-persistence.md §9.18` places on its own concurrent-race cases.
+- [ ] All three unique-composite cases (`StudentBadge`, `TutorBadge`, `ChallengeProgress`) were each confirmed independently — not inferred from one passing that the schema convention was applied consistently to the other two.
+
+### 9.17 Out of Scope for Automated Testing — persistence addendum (and why)
+
+- **`badge.service.ts`'s re-award behavior itself** (silent no-op vs. upsert vs. thrown error) — genuinely undecided per §9.4/Doc 8-6; this tier confirms the constraint the schema enforces regardless of that choice, but doesn't pick a behavior on the plan's behalf (the locked plan's "do not re-litigate structural decisions" rule extends to this kind of application-behavior decision, not just the structural ones named in the plan's preamble).
+- **`ChallengeProgress`'s upsert race under genuine concurrency** — lower risk than the ledger/streak cases (see §9.12); deferred rather than added here.
+- **Sustained multi-client load beyond the 20-way and two-way bursts above** — consistent with every other Phase 5 module's exclusion of dedicated load/performance testing (Review §3.8, separately tracked).
 
 ---
 

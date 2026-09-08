@@ -47,7 +47,7 @@ Test file: `tests/services/matching.service.test.ts`
 |---|---|
 | Signature | `selectTutor(callerId, callerRole, studentId, tutorId): Promise<{ cohortId, status: 'PENDING_ADMIN_APPROVAL', tutorId }>` |
 | Purpose | Path A — student selects a preferred tutor, creating a booking request routed to Admin (UC-23). |
-| Throws | `ApiError(400, "This tutor is not available — please choose from your current recommendations")` — `tutorId` is on the caller's `TutorExclusion` list. `ApiError(409, "You already have a pending or active match")` — an active `MatchRequest`/`Cohort` already exists for the caller. |
+| Throws | `ApiError(403, ...)` — the account-hold gate, via `studentProfile.service.ts → assertAccountStatusAllowsAccess(studentId)`, called first, before any other check (**gap closed** — see `04-database-and-data-model.md §4.2`, `8-2-accounts-guardianship.md`). `ApiError(400, "This tutor is not available — please choose from your current recommendations")` — `tutorId` is on the caller's `TutorExclusion` list. `ApiError(409, "You already have a pending or active match")` — an active `MatchRequest`/`Cohort` already exists for the caller. |
 | Side effects | Creates a `Cohort(format: ONE_TO_ONE, status: PENDING_ADMIN_APPROVAL)` and a single `CohortMembership`; calls `cohort.service.ts` for the shared cohort-creation path rather than duplicating cohort-row construction here. |
 
 Test file: `tests/services/matching.service.test.ts`
@@ -58,6 +58,7 @@ Test file: `tests/services/matching.service.test.ts`
 |---|---|
 | Signature | `triggerNoExactMatch(callerId, callerRole, studentId): Promise<{ matchRequestId, status: 'PENDING_ADMIN_ASSIGNMENT' }>` |
 | Purpose | Manual Path B entry — same resulting state as the automatic 48-hour zero-match escalation (`zeroMatchEscalation.job.ts`) and the automatic hand-off when a tutor's secondary-subject search also fails (FR-TU-008); all three paths converge on identical `MatchRequest.status`, so downstream Admin handling never needs to know which one fired. |
+| Throws | `ApiError(403, ...)` — the account-hold gate, via `studentProfile.service.ts → assertAccountStatusAllowsAccess(studentId)`, called first (**gap closed** — see `04-database-and-data-model.md §4.2`, `8-2-accounts-guardianship.md`). |
 
 Test file: `tests/services/matching.service.test.ts`
 
@@ -67,7 +68,7 @@ Test file: `tests/services/matching.service.test.ts`
 |---|---|
 | Signature | `requestGroupFormat(callerId, callerRole, studentId, subjectId): Promise<{ matchRequestId, status: 'SEARCHING' }>` |
 | Purpose | Path C entry — system auto-match for 1-to-3/1-to-5; no search or selection UI. |
-| Throws | `ApiError(400, "Use /matching/select-tutor or /matching/no-exact-match for the 1-to-1 format")` — caller's `formatPreference` is `ONE_TO_ONE`. |
+| Throws | `ApiError(403, ...)` — the account-hold gate, via `studentProfile.service.ts → assertAccountStatusAllowsAccess(studentId)`, called first, before the format-preference check below (**gap closed** — see `04-database-and-data-model.md §4.2`, `8-2-accounts-guardianship.md`). `ApiError(400, "Use /matching/select-tutor or /matching/no-exact-match for the 1-to-1 format")` — caller's `formatPreference` is `ONE_TO_ONE`. |
 | Side effects | Creates a `MatchRequest(status: SEARCHING)`; the actual grouping logic (finding/forming a compatible `Cohort`) lives in `cohort.service.ts → formOrJoinCohort`, invoked by a matching/scheduling process rather than synchronously inside this call, since group formation depends on other students' concurrent requests. |
 | Edge cases | No `tutorId`, match percentage, or profile data is ever returned by this endpoint or any subsequent status check — enforced by returning a deliberately smaller DTO shape, not by the client hiding fields (API spec §3.2, no-match-information rule for group formats). |
 

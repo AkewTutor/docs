@@ -5,7 +5,7 @@
 **Links back to:** [01. Problem & Solution Statement]
 **Links forward to:** [03. Use Cases]
 
-**Version 3.3 — Amended Baseline**, incorporating the v3.2 amended baseline plus the resolution of two pre-implementation hardening items (server-side rate limiting; a refresh-token model) identified during the Pre-Implementation Checklist audit of Docs 01–09. See Section 18.7.
+**Version 3.4 — Approved Baseline**, incorporating the v3.3 amended baseline (two pre-implementation hardening items: server-side rate limiting; a refresh-token model — Section 18.7) plus final project-owner approval and confirmation of the reconstructed problem-statement sections. See Sections 18.7, 19, and `00-pending-client-actions.md`.
 
 *September 2026 · Confidential — For Project Use Only*
 
@@ -21,8 +21,8 @@
 |---|---|
 | Document Title | AKEWTutor — Software Requirements Specification (SRS) |
 | Project | AKEWTutor Online Tutoring Platform |
-| Version | 3.2 — Amended Baseline |
-| Status | Amended baseline — six v3.1 technical hand-off gaps (Section 18.5) plus seven v3.2 mechanics gaps (Section 18.6) resolved. Ready for Technical Specification drafting. |
+| Version | 3.4 — Approved Baseline |
+| Status | **Approved — no open items of any kind.** Six v3.1 technical hand-off gaps (§18.5), seven v3.2 mechanics gaps (§18.6), and two v3.3 pre-implementation hardening items (§18.7) resolved; project-owner sign-off recorded (§19) and both pending client actions closed (`00-pending-client-actions.md`). Ready for implementation. |
 | Date | September 2026 |
 | Prepared For | AKEWTutor Client / Project Owner |
 | Source Material | v3.1 amended baseline, plus mechanics gaps surfaced during Docs 04/06/08 cross-referencing |
@@ -37,6 +37,7 @@
 | 3.0 | Sep 2026 | Closed both remaining Section 18 items (video conferencing, third-party providers). Resolved 11 numbered gaps, 3 minor items, an 8-item SRS-level audit, and a 5-item final-check audit across five consistency-audit rounds. Added Messaging (FR-MS), Make-up/Reschedule/Cancellation (FR-MK), and two Safety requirements (FR-SC-008/009). Amended account-model, subject-ranking, payout, leaderboard, and notification requirements. Added per-section Definition of Done blocks to Sections 5–14. Fixed one requirement-ID collision and one cross-section contradiction. No items remained open. | Business Analyst |
 | 3.1 | Sep 2026 | Resolved six gaps surfaced during Technical Specification hand-off review: tutor grade coverage, session handling during a payment pause, group messaging thread model, tutor pay for self-caused make-up sessions, stalled 1-to-1 match escalation, and format-switching. Added FR-PB-009, FR-MK-009, FR-MA-018, and FR-SP-045–049. Amended FR-MS-001. No items remain open. | Business Analyst |
 | **3.2** | **Sep 2026** | Defined seven previously-undefined mechanics surfaced while cross-referencing this document against Docs 04/06/08 during Technical Specification drafting: session cadence/billing derivation (Section 7), the match-percentage formula (Section 8, resolves M7), group-splitting mechanics on tutor exit (Section 8, resolves M3), XP point values (Section 10, resolves M4), streak milestones (Section 10, supports M4/M5), the V1 badge seed list (Section 10, resolves M5), and the monetary rounding rule (Section 13, resolves M7). No requirement IDs added, retired, or renumbered — these are definitional/mechanical clarifications of existing requirements, not new or amended FR-xxx items. No items remain open. | Business Analyst |
+| **3.4** | **Sep 2026** | Closed both remaining pre-implementation client actions (`00-pending-client-actions.md`): (1) Section 19 sign-off recorded via in-conversation project-owner confirmation; (2) the five reconstructed sections in `01-problem-and-solution-statement.md` (1.1, 1.2, 1.4, 1.6, 1.8), including the previously-inferred FC-01 badge rationale, confirmed by the project owner as matching intent. No FR-xxx content changed. Document set is fully approved, no open items of any kind remain. | Business Analyst |
 
 ### Requirement ID Key
 
@@ -909,15 +910,15 @@ Three minor items were also resolved in this range: a wording clarification on F
 
 ## 19 Approval & Sign-off
 
-By signing below, the client confirms that this v3.3 Software Requirements Specification — the amended baseline, with no open items — accurately reflects the scope of work to be delivered, and authorizes the design and development team to proceed to Technical/System Specification on this basis.
+**Status: Approved.** The client/project owner confirmed, directly in-conversation (in lieu of a physical signature block), that this v3.3 Software Requirements Specification — the amended baseline, with no open items — accurately reflects the scope of work to be delivered, and authorized the design and development team to proceed to Technical/System Specification on this basis.
 
-**Client / Project Owner**
+| Field | Value |
+|---|---|
+| Approved by | Client / Project Owner (in-conversation confirmation) |
+| Date | September 2026 |
+| Method | In-conversation confirmation, recorded here in lieu of a physical signature, per the project owner's explicit direction |
 
-Name: _______________________________ &nbsp;&nbsp; Signature: _______________________________ &nbsp;&nbsp; Date: _______________
-
-**Agency / Development Team**
-
-Name: _______________________________ &nbsp;&nbsp; Signature: _______________________________ &nbsp;&nbsp; Date: _______________
+> See `00-pending-client-actions.md` — both remaining items (Action 1: this sign-off; Action 2: the five reconstructed sections in `01-problem-and-solution-statement.md`) are now closed.
 
 ---
 

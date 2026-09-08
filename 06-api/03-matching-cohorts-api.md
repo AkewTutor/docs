@@ -164,6 +164,8 @@ When `recommendations` is empty, `zeroMatchSince` reflects the timestamp the zer
 
 **Auth:** Student|Parent
 
+**Gap closed — named enforcement point.** Backed first by `matching.service.ts → selectTutor`, which itself calls `assertAccountStatusAllowsAccess(studentId)` before any other check — returns `403` if the target student is `GUARDIAN_REQUIRED_HOLD` or `PENDING_ACTIVATION` (see `08-function-level-specification/backend/8-2-accounts-guardianship.md`, `8-3-matching-cohorts.md`).
+
 **Request body:**
 ```json
 {
@@ -202,6 +204,8 @@ When `recommendations` is empty, `zeroMatchSince` reflects the timestamp the zer
 
 **Auth:** Student|Parent
 
+Same guardian-hold `403` as `POST /matching/select-tutor` above, via the same `assertAccountStatusAllowsAccess` gate in `triggerNoExactMatch`.
+
 **Request body:**
 ```json
 {
@@ -233,6 +237,8 @@ When `recommendations` is empty, `zeroMatchSince` reflects the timestamp the zer
 **Purpose:** Entry point into Path C — system auto-match for 1-to-3/1-to-5 (UC-28, FR-MA-012, FR-SP-030). No search or selection UI; the student's preference simply enters the auto-match engine.
 
 **Auth:** Student|Parent — caller's `formatPreference` must be `ONE_TO_THREE` or `ONE_TO_FIVE`.
+
+Same guardian-hold `403` as `POST /matching/select-tutor` above, via the same `assertAccountStatusAllowsAccess` gate in `requestGroupFormat`, checked before the format-preference check.
 
 **Request body:**
 ```json

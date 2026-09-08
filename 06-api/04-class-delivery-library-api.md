@@ -43,6 +43,8 @@
 
 **Auth:** Student|Parent|Tutor
 
+**Gap closed — named enforcement point.** Backed by `session.service.ts → assertSessionAccessAllowed` (see `08-function-level-specification/backend/8-4-class-delivery-library.md`). For a Student/Parent caller, this returns `403` (not an empty list) if the target student's `accountStatus` is `GUARDIAN_REQUIRED_HOLD` or `PENDING_ACTIVATION` — this is the class-access half of the FR-AC-008 hold rule; the booking half is enforced identically in `matching-cohorts` (`06-api/03-matching-cohorts-api.md`).
+
 **Query params:**
 ```
 ?studentId=uuid (required for Parent)
@@ -87,6 +89,8 @@ No sessions yet (student still matching) returns `sessions: []` — not an error
 **Purpose:** Full detail for one session, including its recording-compliance state (UC-42, UC-44, UC-48).
 
 **Auth:** Student|Parent|Tutor — caller must be a member/tutor of the session's cohort.
+
+Also backed by `assertSessionAccessAllowed` — same `403` on `GUARDIAN_REQUIRED_HOLD`/`PENDING_ACTIVATION` for a Student/Parent caller as `GET /sessions` above, checked before the membership/ownership check runs.
 
 **Path params:** `sessionId` — ScheduledSession UUID
 

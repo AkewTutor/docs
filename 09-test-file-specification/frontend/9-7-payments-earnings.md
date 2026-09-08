@@ -6,6 +6,8 @@
 
 All monetary fields are `string` (Decimal-as-string) throughout, per 8-7. Every test in this doc that touches a money field asserts against the string value directly or via the decimal-safe library's own comparison methods — **never** via `parseFloat`/`Number()` coercion, since a test written that way could pass while hiding the exact precision-loss bug the string convention exists to prevent.
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
@@ -26,20 +28,24 @@ All monetary fields are `string` (Decimal-as-string) throughout, per 8-7. Every 
 
 ### 9.1 Test File Map
 
-| Source file | Test file | Notes |
-|---|---|---|
-| src/lib/money.ts | tests/lib/money.test.ts | mandatory (util, per 8-7) — full block below |
-| src/hooks/usePayments.ts | tests/hooks/usePayments.test.ts | mandatory — full block below |
-| src/hooks/useEarnings.ts, usePricing.ts, useRefunds.ts, usePayouts.ts, usePromotions.ts | tests/hooks/{useEarnings,usePricing,useRefunds,usePayouts,usePromotions}.test.ts | mandatory (plain reads/writes per the shared-pattern tables) |
-| src/pages/PaymentPage.tsx, components/ChapaCheckoutButton.tsx | tests/pages/PaymentPage.test.tsx | non-trivial: external redirect, post-return reconciliation — full block below |
-| src/pages/PaymentHistoryPage.tsx | tests/pages/PaymentHistoryPage.test.tsx | thin table wrapper; `formatMoney` usage checked, no separate full block |
-| src/pages/PaymentPausedPage.tsx | tests/pages/PaymentPausedPage.test.tsx | non-trivial: full blocking screen, per-student scoping — full block below |
-| src/components/PaymentReminderBanner.tsx | tests/components/PaymentReminderBanner.test.tsx | non-trivial: one-per-child instancing |
-| src/pages/tutor/EarningsPage.tsx | tests/pages/EarningsPage.test.tsx | non-trivial: inline itemization convention |
-| src/components/PricingConfigForm.tsx | tests/components/PricingConfigForm.test.tsx | non-trivial: decimal-safe arithmetic guard — full block below |
-| src/components/RefundCard.tsx | tests/components/RefundCard.test.tsx | non-trivial: no client-side recomputation of proration |
-| src/components/PayoutBatchTable.tsx | tests/components/PayoutBatchTable.test.tsx | non-trivial: idempotency UI guard |
-| src/components/PromotionForm.tsx | tests/components/PromotionForm.test.tsx | non-trivial: percent-range clamp |
+| Source file | Test file | Test type | Notes |
+|---|---|---|---|
+| src/lib/money.ts | tests/lib/money.test.ts | Unit | mandatory (util, per 8-7) — full block below |
+| src/hooks/usePayments.ts | tests/hooks/usePayments.test.ts | Hook | mandatory — full block below |
+| src/hooks/useEarnings.ts, usePricing.ts, useRefunds.ts, usePayouts.ts, usePromotions.ts | tests/hooks/{useEarnings,usePricing,useRefunds,usePayouts,usePromotions}.test.ts | Hook | mandatory (plain reads/writes per the shared-pattern tables) |
+| src/pages/PaymentPage.tsx, components/ChapaCheckoutButton.tsx | tests/pages/PaymentPage.test.tsx | Component | non-trivial: external redirect, post-return reconciliation — full block below |
+| src/pages/PaymentHistoryPage.tsx | tests/pages/PaymentHistoryPage.test.tsx | Component | thin table wrapper; `formatMoney` usage checked, no separate full block |
+| src/pages/PaymentPausedPage.tsx | tests/pages/PaymentPausedPage.test.tsx | Component | non-trivial: full blocking screen, per-student scoping — full block below |
+| src/components/PaymentReminderBanner.tsx | tests/components/PaymentReminderBanner.test.tsx | Component | non-trivial: one-per-child instancing |
+| src/pages/tutor/EarningsPage.tsx | tests/pages/EarningsPage.test.tsx | Component | non-trivial: inline itemization convention |
+| src/components/PricingConfigForm.tsx | tests/components/PricingConfigForm.test.tsx | Component | non-trivial: decimal-safe arithmetic guard — full block below |
+| src/pages/admin/PricingConfigPage.tsx | — | — | Not required — thin route/layout wrapper around `PricingConfigForm` (`useActivePricing()` fetch + per-format form composition, no branching logic of its own); covered by `PricingConfigForm.test.tsx` plus a smoke test confirming one form renders per format, matching the `AvailabilityPage.tsx`/`SubjectRankingPage.tsx` precedent in `9-2-accounts-guardianship.md §9.1` |
+| src/components/RefundCard.tsx | tests/components/RefundCard.test.tsx | Component | non-trivial: no client-side recomputation of proration |
+| src/pages/admin/RefundReviewPage.tsx | — | — | Not required — thin route/layout wrapper around `RefundCard`, no logic beyond the loading/empty/success states listed in 8-7; covered by `RefundCard.test.tsx` plus a smoke test for the empty-queue state, matching the `AvailabilityPage.tsx`/`SubjectRankingPage.tsx` precedent |
+| src/components/PayoutBatchTable.tsx | tests/components/PayoutBatchTable.test.tsx | Component | non-trivial: idempotency UI guard |
+| src/pages/admin/PayoutManagementPage.tsx | — | — | Not required — thin route/layout wrapper around `PayoutBatchTable` (`usePayoutBatches(page)` fetch only); covered by `PayoutBatchTable.test.tsx` plus a smoke test for the empty-batches state, matching the `AvailabilityPage.tsx`/`SubjectRankingPage.tsx` precedent |
+| src/components/PromotionForm.tsx | tests/components/PromotionForm.test.tsx | Component | non-trivial: percent-range clamp |
+| src/pages/admin/PromotionManagementPage.tsx | — | — | Not required — thin route/layout wrapper around `PromotionForm` + `useActivePromotions()` list, no logic of its own; covered by `PromotionForm.test.tsx` plus a smoke test for the code-list render, matching the `AvailabilityPage.tsx`/`SubjectRankingPage.tsx` precedent |
 
 ---
 
@@ -52,6 +58,7 @@ All monetary fields are `string` (Decimal-as-string) throughout, per 8-7. Every 
 | Formats a decimal string with thousands separators and currency suffix | `formatMoney("1234.5")` | — | e.g. `"1,234.50 ETB"` (exact format per the design, but the separator/decimal-places/suffix presence is asserted regardless of exact copy) |
 | Never uses native `parseFloat`/`Number()` internally on the value | inspect the implementation (static check as part of this test file's setup, or a spy on `Number`/`parseFloat` if feasible) | call `formatMoney` | the decimal-safe library's own parsing path is used — this is the exact precision-loss vector `00-api-conventions.md` §0.6 introduced the string convention to prevent, and a native-number code path anywhere in this function silently reintroduces float rounding error on real currency values |
 | A value with more than 2 decimal places is not silently truncated in a way that loses cents | `formatMoney("99.999")` | — | rounds per the decimal-safe library's documented rounding mode, not a native-float truncation artifact (e.g. never renders `"99.99" ` from a value that should round to `"100.00"`) |
+| **[Phase 4 — Review §6.1] Round-half-up applied at exactly the `.XX5` boundary** | `formatMoney("33.125")` | — | renders `"33.13"`, not `"33.12"` — confirms the same round-half-up discipline `9-7-payments-earnings.md §9.12`'s `calculateProration` enforces server-side is not undermined by a different (e.g. round-half-to-even) rounding mode on the display side; a value server-computed as `"33.13"` and then re-rounded client-side must never visibly disagree with what the server actually charged/refunded |
 | Output is display-only — never fed back into a request | grep-style/static assertion in the test file's own documentation comment (not a runtime check) | — | no component in this feature file's other tests ever passes a `formatMoney(...)` return value into a mutation payload — cross-referenced against §9.3's `PricingConfigForm` case, which explicitly uses the raw decimal-safe arithmetic instead |
 
 ---
@@ -126,6 +133,7 @@ FRs: FR-AD-009. **OWASP: A04:2021 – Insecure Design (client-side arithmetic gu
 - [ ] `PricingConfigForm`'s arithmetic-guard test uses values whose native-float sum would produce a classic floating-point artifact (e.g. `0.1 + 0.2 !== 0.3`-style inputs) specifically to prove the decimal-safe library path is actually exercised, not values that would coincidentally sum correctly under naive float math too.
 - [ ] `PaymentPausedPage`'s route-blocking case is tested as an actual navigation/redirect assertion, not merely "the nav link is hidden" — a hidden link is a UX nicety, but a reachable direct URL would be the real gap.
 - [ ] `useInitiatePayment`'s redirect test asserts `window.location.href` was set to the exact returned `chapaCheckoutUrl`, not a hardcoded/assumed URL shape.
+- [ ] **[Phase 4]** `money.test.ts`'s `.XX5` boundary case (`"33.125"` → `"33.13"`) is checked against the same rounding mode `9-7-payments-earnings.md` (backend) §9.12's `calculateProration` case uses — if the two ever specify different rounding modes, that is itself a bug this pair of tests exists to catch, not a discrepancy to quietly resolve by loosening either assertion.
 - [ ] No test in this file coerces a money-as-string field to a JS `number` for a correctness assertion (e.g. `Number(rendered) === 1234.5`) — doing so would itself reintroduce the exact precision risk this whole feature's string convention exists to avoid, even inside a test.
 
 ---

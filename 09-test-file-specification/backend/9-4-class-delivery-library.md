@@ -6,13 +6,17 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 
 **Owns:** ScheduledSession, RescheduleRequest, SessionMiss, RecordingConsent, Recording, LibraryMaterial, WeeklyAssessment. **Depends on:** `matching-cohorts` (hard).
 
+See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this document.
+
+**Tier note — Integration (HTTP contract):** this tier tests routing/middleware/controller wiring with the service layer mocked. It does not test persistence — see the Integration (persistence) tier (same file, below, or in a sibling `9-N-module-persistence.md`) for that.
+
 ---
 
 ### 9.0 FR/NFR Traceability Summary
 
 | Source file | FRs covered | NFRs covered |
 |---|---|---|
-| session.service.ts | FR-CD-001–003, Section 7 v3.2 cadence/billing | — |
+| session.service.ts | FR-CD-001–003, FR-CD-006, FR-AC-008 (`assertSessionAccessAllowed` — gap closed), Section 7 v3.2 cadence/billing | — |
 | recordingConsent.service.ts | FR-SC-008–009 | — |
 | storage.client.ts | FR-SP-035, FR-CD-005 | NFR-007, NFR-012 |
 | recording.service.ts | FR-SP-035–037, FR-CD-004–008, Section 5.8 (90-day retention, 720p) | NFR-007, NFR-009, NFR-012 |
@@ -30,30 +34,30 @@ Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest �
 | src/schemas/session.schema.ts | tests/schemas/session.schema.test.ts | Unit | ☐ |
 | src/services/session.service.ts | tests/services/session.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/session.controller.ts | tests/controllers/session.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/session.routes.ts | tests/routes/session.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/session.routes.ts | tests/routes/session.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/recordingConsent.schema.ts | tests/schemas/recordingConsent.schema.test.ts | Unit | ☐ |
 | src/services/recordingConsent.service.ts | tests/services/recordingConsent.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/recordingConsent.controller.ts | tests/controllers/recordingConsent.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/recordingConsent.routes.ts | tests/routes/recordingConsent.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/recordingConsent.routes.ts | tests/routes/recordingConsent.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/utils/providers/storage.client.ts | tests/utils/providers/storage.client.test.ts | Unit (mocked R2 SDK) | ☐ |
 | src/services/recording.service.ts | tests/services/recording.service.test.ts | Unit (mocked Prisma, mocked `recordingConsent.service`, mocked `storage.client`) | ☐ |
 | src/controllers/recording.controller.ts | tests/controllers/recording.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/recording.routes.ts | tests/routes/recording.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/recording.routes.ts | tests/routes/recording.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/library.schema.ts | tests/schemas/library.schema.test.ts | Unit | ☐ |
 | src/services/library.service.ts | tests/services/library.service.test.ts | Unit (mocked Prisma, mocked `storage.client`) | ☐ |
 | src/controllers/library.controller.ts | tests/controllers/library.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/library.routes.ts | tests/routes/library.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/library.routes.ts | tests/routes/library.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/reschedule.schema.ts | tests/schemas/reschedule.schema.test.ts | Unit | ☐ |
 | src/services/reschedule.service.ts | tests/services/reschedule.service.test.ts | Unit (mocked Prisma, mocked `sessionMiss.service`) | ☐ |
 | src/controllers/reschedule.controller.ts | tests/controllers/reschedule.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/reschedule.routes.ts | tests/routes/reschedule.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/reschedule.routes.ts | tests/routes/reschedule.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/services/sessionMiss.service.ts | tests/services/sessionMiss.service.test.ts | Unit (mocked Prisma, mocked `session.service`, `notification.service`) | ☐ |
 | src/controllers/sessionMiss.controller.ts | tests/controllers/sessionMiss.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/sessionMiss.routes.ts | tests/routes/sessionMiss.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/sessionMiss.routes.ts | tests/routes/sessionMiss.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/schemas/weeklyAssessment.schema.ts | tests/schemas/weeklyAssessment.schema.test.ts | Unit | ☐ |
 | src/services/weeklyAssessment.service.ts | tests/services/weeklyAssessment.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/weeklyAssessment.controller.ts | tests/controllers/weeklyAssessment.controller.test.ts | Unit (mocked service) | ☐ |
-| src/routes/weeklyAssessment.routes.ts | tests/routes/weeklyAssessment.routes.test.ts | Integration (supertest) | ☐ |
+| src/routes/weeklyAssessment.routes.ts | tests/routes/weeklyAssessment.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
 | src/jobs/classReminder.job.ts | — | Underlying logic covered via `notification.service.test.ts` (shared-config) call assertions; interval wrapper excluded | — |
 | src/jobs/recordingMissingCheck.job.ts | — | Underlying logic covered via `recording.service.test.ts`'s `flagMissing`/`escalateMissing` cases; interval wrapper excluded | — |
 
@@ -81,6 +85,7 @@ FRs: FR-CD-001–003, Section 7 v3.2 cadence/billing. **OWASP: A01:2021 – Brok
 | Does not double-generate on a re-run for the same cycle | mock existing sessions already present in the target window | call `generateSessionsForCohort(cohortId)` a second time | no additional `ScheduledSession` rows created — guarded by checking for existing sessions first |
 | Does not overwrite an already-set sessionsPerWeek | mock `Cohort.sessionsPerWeek` already `2`, but the tutor's current `AvailabilitySlot`s would now compute to `3` | call `generateSessionsForCohort(cohortId)` again (e.g. a retried call) | `sessionsPerWeek` remains `2` — cadence is frozen at first confirmation per Doc 04, a later availability edit must never retroactively change it |
 | A tutor's later availability edits never affect an ACTIVE cohort's cadence | mock a cohort already `ACTIVE` with `sessionsPerWeek: 2`; mock the tutor removing/adding slots afterward | re-derive/re-check `sessionsPerWeek` for this cohort | unchanged at `2` — only a fresh `MatchRequest`/new `Cohort` picks up new cadence, per Doc 02 §7's explicit freeze rule |
+| **[Phase 4 — Review §6.1] Weekly recurring sessions keep the same local wall-clock time across a DST transition** | mock a recurring `AvailabilitySlot` expressed as a UTC-offset window belonging to a user whose client reports a DST-observing zone (e.g. a diaspora parent in `America/New_York`); generate the cycle's 4 weekly `ScheduledSession` occurrences spanning that zone's DST transition date | call `generateSessionsForCohort(cohortId)` | each of the 4 sessions' *local wall-clock* time in that zone is identical week to week (e.g. always "4:00 PM Eastern") even though the corresponding UTC instant shifts by an hour across the transition — sessions are generated from the stored recurrence rule's local time semantics, not by adding a fixed UTC duration per week, which would silently produce a session an hour off from what the tutor/student actually agreed to. `Africa/Addis_Ababa` itself never observes DST, so this case only matters for a traveling or diaspora user's client-side interpretation of the same underlying UTC instants — the stored instants themselves are unaffected either way |
 
 #### provideJitsiLink
 
@@ -91,6 +96,20 @@ FRs: FR-CD-001–003, Section 7 v3.2 cadence/billing. **OWASP: A01:2021 – Brok
 | Tutor provides link under 30 minutes before start | mock `scheduledStart` 10 minutes away | call `provideJitsiLink(...)` | resolves successfully (submission is **not** blocked) with `providedLateNotice: true` |
 | Submission still succeeds even if extremely late (mid-class or after) | mock `scheduledStart` in the past | call `provideJitsiLink(...)` | still resolves (not rejected outright) with `providedLateNotice: true` — the student still needs the link; this flag only feeds `sessionMiss.service.ts` if the class ends up disrupted |
 | Non-assigned tutor rejected (IDOR) | mock caller is not this session's assigned tutor | call `provideJitsiLink(otherTutorId, sessionId, url)` | throws `ApiError(403, "Not authorized to provide a link for this session")` |
+
+#### assertSessionAccessAllowed (**gap closed** — see `04-database-and-data-model.md §4.2`, `8-4-class-delivery-library.md`)
+
+FRs: FR-AC-008, FR-CD-006. **OWASP: A01:2021 – Broken Access Control.**
+
+| Case | Setup | Action | Expected result |
+|---|---|---|---|
+| Student caller with ACTIVE account and real membership | mock `assertAccountStatusAllowsAccess` (accounts-guardianship) to resolve silently; mock caller has an `ACTIVE`/historical `CohortMembership` on the session's `Cohort` | call `assertSessionAccessAllowed(callerId, 'STUDENT', sessionId)` | resolves the `ScheduledSession` row |
+| **Student/Parent blocked while on the guardian-hold** | mock `assertAccountStatusAllowsAccess` to throw `ApiError(403, ...)` | call `assertSessionAccessAllowed(callerId, 'STUDENT', sessionId)` | the same `ApiError(403, ...)` propagates unmodified, and is thrown before the membership/ownership check below is even reached |
+| **Parent caller is gated on the target student's status, not their own** | mock `assertAccountStatusAllowsAccess` to throw for the linked student | call `assertSessionAccessAllowed(parentId, 'PARENT', sessionId)` | throws the same `ApiError(403, ...)` — a parent has no independent `accountStatus` of their own; the gate always resolves against the `StudentProfile` |
+| **Tutor caller is never gated by the guardian-hold check** | mock `assertAccountStatusAllowsAccess` to throw if it were called (it must not be) | call `assertSessionAccessAllowed(tutorId, 'TUTOR', sessionId)` where the tutor is genuinely assigned to the cohort | resolves the session normally — `assertAccountStatusAllowsAccess` is asserted **not called** for a `TUTOR`/`ADMIN` caller, confirming the tutor/Admin exemption documented in Doc 8-4 |
+| **Admin caller is never gated by the guardian-hold check** | same pattern as above, `callerRole: 'ADMIN'` | call `assertSessionAccessAllowed(adminId, 'ADMIN', sessionId)` | resolves the session; `assertAccountStatusAllowsAccess` asserted not called |
+| Caller with no relation to the cohort at all (IDOR, independent of hold status) | mock a real, existing session/cohort the caller was never a member or tutor of; `assertAccountStatusAllowsAccess` resolves silently (account is `ACTIVE`) | call `assertSessionAccessAllowed(callerId, 'STUDENT', otherSessionId)` | throws `ApiError(403, "Not authorized to view this session")` — this is the ordinary membership check, distinct from the hold check above, and must still fire even when the caller's own account is in good standing |
+| Non-existent sessionId | mock `ScheduledSession.findUnique` → `null` | call `assertSessionAccessAllowed(callerId, 'STUDENT', randomUUID())` | throws `ApiError(404, ...)` |
 
 #### markCompleted
 
@@ -315,6 +334,7 @@ FRs: FR-MK-004, FR-MK-006–008.
 | Monthly cap enforced — 3rd free reschedule in the same month rejected | mock caller has already used 2 free reschedules this calendar month, this request is ≥12h notice | call `requestReschedule(...)` | throws `ApiError(409, "Free reschedule limit reached for this month — further changes require Admin review")` via `enforceMonthlyCap` |
 | Monthly cap resets at the calendar-month boundary, not a rolling 30 days | mock 2 free reschedules used in the prior calendar month, 0 so far in the current one | call `requestReschedule(...)` (≥12h notice) in the new month | succeeds — confirms the cap is calendar-month-scoped, distinct from `SessionMiss`'s rolling-30-day escalation window |
 | A reschedule never consumes a make-up session or has a billing impact | mock a valid FREE_RESCHEDULE | call `requestReschedule(...)` | assert no `SessionMiss`/make-up/earning-rate flag is touched — confirms FR-MK-008's "carries no billing impact and does not consume a make-up session" |
+| **[Phase 4 — Review §6.1] Notice-hours computation is unaffected by a DST transition between now and the session** | mock `scheduledStart` such that the wall-clock difference for a DST-observing client (e.g. `America/New_York`) would appear as either 11 or 13 hours depending on whether a naive `(scheduledStart - now) / 3600000` calculation is done against local time vs. UTC instants, straddling a DST transition date | call `requestReschedule(...)` for a case where the true elapsed time is exactly 12 real (UTC) hours | classified `FREE_RESCHEDULE` — the elapsed-time calculation is performed on the two `Date`/UTC instants directly (millisecond difference), never by re-deriving each side's local calendar/clock representation first, which is exactly the kind of arithmetic a DST-observing zone can silently corrupt by an hour |
 
 #### enforceMonthlyCap
 
@@ -426,6 +446,7 @@ FRs: FR-SP-038, FR-TU-017.
 
 - [ ] `uploadRecording`'s group-format consent gate is tested with the **any-one-incomplete-blocks-all** case explicitly (2 of 3 complete, upload still blocked) — not just the all-complete and all-incomplete extremes, which would miss a bug where the check only looks at the *first* member.
 - [ ] `getSignedUrl`'s cross-student-access-denied case is tested against a recording belonging to a *different, real* cohort the caller has no relation to — not just an entirely nonexistent id (which would only exercise the 404 path, not the 403/IDOR path).
+- [ ] **[Phase 4]** Both DST-transition cases (`generateSessionsForCohort`, `requestReschedule`) are run with the test environment/mocked clock set to a genuinely DST-observing zone — see the identical note in `9-3-matching-cohorts.md`'s Coverage Honesty Check; the same false-pass risk applies here.
 - [ ] The 90-day-retention-vs-kept-permanently distinction is tested as two separate branches on the same expired timestamp, not inferred from one case.
 - [ ] `checkTutorEscalation`'s rolling-30-day window is tested with a miss just outside the window (e.g. day 31) to confirm the boundary excludes it, not just with misses clearly inside or clearly far outside.
 - [ ] The reschedule monthly cap and the tutor-escalation 30-day window are tested as genuinely different time-scoping rules (calendar-month vs. rolling-30-day) — a shared/copy-pasted date-math helper between the two would be a real bug this doc's explicit callout is meant to catch.

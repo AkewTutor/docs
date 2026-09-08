@@ -24,6 +24,7 @@
 | PATCH | /guardianship/relationships/:id/revoke | Student\|Parent\|Admin | UC-08, UC-09 | FR-AC-007, FR-AC-008 |
 | GET | /tutors/me/profile | Tutor | UC-16 | FR-TU-003 |
 | PATCH | /tutors/me/profile | Tutor | UC-16 | FR-TU-003 |
+| POST | /tutors/me/resubmit-verification | Tutor | UC-18 (alternate flow) | FR-TU-004 |
 | PUT | /tutors/me/subjects | Tutor | UC-17 | FR-TU-006, FR-TU-007, FR-TU-008 |
 | GET | /tutors/me/availability | Tutor | UC-19 | FR-TU-009 |
 | POST | /tutors/me/availability | Tutor | UC-19 | FR-TU-009 |
@@ -466,6 +467,40 @@ A caller with no relationships (e.g. an independent Grade 6–12 student who nev
 **Error responses:** none beyond common validation.
 
 **Implemented in:** `src/controllers/tutorProfile.controller.ts → updateProfile` · `src/services/tutorProfile.service.ts → updateProfile` · `src/schemas/tutorProfile.schema.ts → updateTutorProfileSchema`
+
+---
+
+#### POST /tutors/me/resubmit-verification
+
+**Purpose:** Re-queue a `REJECTED` tutor for Admin review after they've corrected their profile (UC-18 alternate flow — Issue 2 fix; resolves the gap flagged in `09-test-file-specification/phase7-review-signoff.md` and `10-e2e-specification.md §10.8`).
+
+**Auth:** Tutor
+
+**Precondition:** Caller's `TutorProfile.verificationStatus` is `REJECTED`. This endpoint does not itself accept or validate profile fields — the tutor is expected to have already corrected their profile via `PATCH /tutors/me/profile` before calling this. It exists solely to flip the status back into the review queue.
+
+**Request body:** none.
+
+**Success response — 200:**
+```json
+{
+  "statusCode": 200,
+  "success": true,
+  "message": "OK",
+  "data": {
+    "id": "uuid",
+    "verificationStatus": "PENDING"
+  }
+}
+```
+
+**Side effects:** Sets `verificationStatus: PENDING` and clears `verifiedAt`/`verifiedById` back to `null` (the prior rejection's Admin/timestamp no longer describes the tutor's current state). The tutor reappears in `GET /admin/tutors/pending`.
+
+**Error responses:**
+| Status | Condition | Message |
+|---|---|---|
+| 409 | `verificationStatus` is not currently `REJECTED` | "Only a rejected application can be resubmitted" |
+
+**Implemented in:** `src/controllers/tutorProfile.controller.ts → resubmitVerification` · `src/services/tutorProfile.service.ts → resubmitVerification`
 
 ---
 
