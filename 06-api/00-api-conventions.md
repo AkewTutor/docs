@@ -115,7 +115,7 @@ None of these has a corresponding `POST /.../run` endpoint. Client applications 
 | Chapa | Payment processing (Section 16) | `POST /payments/initiate` returns a Chapa checkout URL; Chapa calls back to `POST /payments/webhook/chapa` (Webhook auth — HMAC signature verified via the header Chapa specifies, not a JWT) |
 | Geez SMS | Phone verification, SMS notification channel | Called server-side only, from `notification.service.ts` / `auth.service.ts`; no client-facing endpoint |
 | Brevo | Email verification, email notification channel | Same as above — server-side only |
-| Cloudflare R2 | Recording and Library material storage | Client never talks to R2 directly; `GET /recordings/:id/signed-url` returns a short-lived signed URL generated server-side |
+| Backblaze B2 (S3-compatible) | Recording and Library material storage | Client never talks to object storage directly; `GET /recordings/:id/signed-url` returns a short-lived signed URL generated server-side |
 | Jitsi | Video conferencing | No API integration — the tutor generates a link via the public Jitsi instance directly and submits it via `POST /sessions/:sessionId/link`; AKEWTutor's backend stores and delivers the URL but does not call a Jitsi API |
 
 ---

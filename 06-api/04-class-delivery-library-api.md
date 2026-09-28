@@ -361,7 +361,7 @@ A recording past `expiresAt` and not `keepPermanently` is excluded from this lis
   "success": true,
   "message": "OK",
   "data": {
-    "signedUrl": "https://r2.akewtutor.com/...?signature=...",
+    "signedUrl": "https://s3.<region>.backblazeb2.com/<bucket>/...?signature=...",
     "expiresIn": 900
   }
 }
@@ -472,7 +472,7 @@ file: binary, required
     "cohortId": "uuid",
     "title": "Algebra Practice Set 3",
     "fileType": "PDF",
-    "fileUrl": "https://r2.akewtutor.com/..."
+    "fileUrl": "https://s3.<region>.backblazeb2.com/<bucket>/..."
   }
 }
 ```
@@ -507,7 +507,7 @@ file: binary, required
         "id": "uuid",
         "title": "Algebra Practice Set 3",
         "fileType": "PDF",
-        "fileUrl": "https://r2.akewtutor.com/...",
+        "fileUrl": "https://s3.<region>.backblazeb2.com/<bucket>/...",
         "createdAt": "2026-09-01T10:00:00Z"
       }
     ]

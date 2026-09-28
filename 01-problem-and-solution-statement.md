@@ -66,7 +66,7 @@ An Admin console sits behind all of this, giving the operations team full contro
 
 **Removal of the tutor rating/review system, replaced with achievement-based badges.** *(The SRS records that this was removed, "Feature Change FC-01," but did not originally record the reasoning; the rationale below was inferred and has since been confirmed by the project owner as correct — September 2026.)* Public, subjective star-ratings can unfairly and disproportionately affect a tutor's income based on a small number of reviews, while an objective, achievement/experience-based badge system rewards consistent performance without exposing tutors to that risk.
 
-**Chapa, Geez SMS, Brevo, and Cloudflare R2 as the third-party stack, rather than building custom equivalents.** These were chosen for direct compatibility with the Ethiopian market — ETB-denominated payment processing, local SMS delivery — while relying on managed infrastructure for storage and email rather than building and maintaining that infrastructure in-house for an initial release.
+**Chapa, Geez SMS, Brevo, and Backblaze B2 (S3-compatible) as the third-party stack, rather than building custom equivalents.** These were chosen for direct compatibility with the Ethiopian market — ETB-denominated payment processing, local SMS delivery — while relying on managed infrastructure for storage and email rather than building and maintaining that infrastructure in-house for an initial release.
 
 ### 1.5 Scope
 

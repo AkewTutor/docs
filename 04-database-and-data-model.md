@@ -21,7 +21,7 @@ This becomes `prisma/schema.prisma` (or equivalent ORM schema) almost line for l
 - **The billing cycle is a fixed 28-day window, not a true calendar month.** This makes `totalSessionsBilled = sessionsPerWeek × 4` exact and deterministic for every Cohort, which a true month (28–31 days, non-integer week count) could not guarantee. User-facing copy says "monthly"; the schema and billing math use the fixed 28-day figure.
 - **No spatial/PostGIS concerns** — unlike the reference project, AKEWTutor has no map or grid component; nothing here needs geographic types.
 - **All monetary fields are `Decimal`, never `Float`.** Prices, revenue splits, refunds, and payouts are real ETB currency, not scientific/statistical values (the opposite emphasis from the reference project, where signal/score values were correctly `Float`) — `Decimal` avoids floating-point rounding error in money math.
-- **Primary keys are `String (UUID)` / `default uuid()`, not the template's `cuid()`.** This is a deliberate choice, not an oversight: Prisma supports `uuid()` natively, and UUIDs are the more broadly interoperable choice given the number of external integrations here (Chapa payments, Cloudflare R2, SMS/email providers) — the same reasoning that justifies departing from a template default elsewhere in this section (e.g. `Decimal` vs. `Float` above).
+- **Primary keys are `String (UUID)` / `default uuid()`, not the template's `cuid()`.** This is a deliberate choice, not an oversight: Prisma supports `uuid()` natively, and UUIDs are the more broadly interoperable choice given the number of external integrations here (Chapa payments, Backblaze B2 (S3-compatible), SMS/email providers) — the same reasoning that justifies departing from a template default elsewhere in this section (e.g. `Decimal` vs. `Float` above).
 - **Enums are used wherever a fixed, closed set exists** (roles, statuses, `TutoringFormat`, evidence-adjacent categories, etc.), so that Admin-configurable pricing (FR-PR-004) and matching logic always validate against a known, closed format set rather than free text.
 - **Grade levels are a plain integer field (1–12), not a separate entity.** Since FR-TU-006 confirms a tutor's ranked subjects apply across the *entire* Grade 1–12 span with no per-grade configuration, there is no `GradeLevel` table to join against — grade is just a bounded `Int` on `StudentProfile`, validated at the application layer.
 
@@ -534,7 +534,7 @@ The application layer blocks `SessionMiss`/`Recording` creation for a pairing's 
 |---|---|---|---|
 | id | String (UUID) | PK, default uuid() | |
 | sessionId | String | FK → ScheduledSession.id, unique, required | |
-| storageKey | String | required | Cloudflare R2 object key |
+| storageKey | String | required | Backblaze B2 (S3-compatible) object key |
 | fileSizeBytes | Int | required | |
 | encoding | String | required, default `"720p"` | |
 | createdAt | DateTime | default now() | |

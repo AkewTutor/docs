@@ -791,7 +791,7 @@ Confirmed by client as final — no changes from v2.0/v3.0.
 | SMS Provider | Phone number verification and SMS notifications | Confirmed — Geez SMS |
 | Email Provider | Email verification and notification delivery | Confirmed — Brevo |
 | Telegram | Direct emergency contact channel with Admin | Confirmed by client (unchanged from v2.0) |
-| Cloud Object Storage | Storing class recordings and Library materials | Confirmed — Cloudflare R2 |
+| Cloud Object Storage | Storing class recordings and Library materials | Confirmed — Backblaze B2 (S3-compatible) |
 
 These are provider decisions, not yet technical integration specifications — API contracts, webhook design, and failover behavior for each provider are Technical Specification concerns and follow from this document.
 
@@ -826,7 +826,7 @@ All items open at the end of v2.0 were resolved in v3.0, the six hand-off gaps i
 | Topic | Resolution |
 |---|---|
 | Video conferencing tool | Jitsi confirmed (public instance at launch; self-hosted evaluated for later phase). See Section 9.1. |
-| Third-party providers | Chapa (payment), Geez SMS (SMS), Brevo (email), Cloudflare R2 (storage) all confirmed. See Section 16. |
+| Third-party providers | Chapa (payment), Geez SMS (SMS), Brevo (email), Backblaze B2 (S3-compatible storage) all confirmed. See Section 16. |
 
 ### 18.2 Numbered Gaps Resolved (v3.0, Rounds 1–3)
 

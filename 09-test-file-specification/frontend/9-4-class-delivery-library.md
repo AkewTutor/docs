@@ -171,7 +171,7 @@ FRs: FR-MK-004, FR-MK-006–008. **OWASP: A08:2021 – Software and Data Integri
 - **`RecordingIndicatorBanner.tsx`** — purely presentational, a single `visible: boolean` prop with no branching of its own (8-4 explicitly notes "no polling or data-fetching of its own"); its correct visibility is exercised through the host pages' tests (`ConductClassPage`, LibraryPage-adjacent flows) rather than duplicated here.
 - **`ProgressPage.tsx`** — thin wrapper around `useAssessmentsForStudent`; loading/empty/success states are the same generic pattern covered elsewhere in this doc, not repeated in full.
 - **Real Jitsi link generation/validity** — out of scope entirely; per `00-api-conventions.md` §0.5, this app never calls a Jitsi API and only stores/displays a tutor-pasted URL. There is no client-side test that could meaningfully verify a third-party video link works.
-- **Real Cloudflare R2 signed-URL generation or expiry timing** — server-side; this doc only tests the frontend's handling of whatever URL/expiry the backend returns.
+- **Real Backblaze B2 signed-URL generation or expiry timing** — server-side; this doc only tests the frontend's handling of whatever URL/expiry the backend returns.
 - **File-type/size enforcement UI beyond the file picker's `accept` attribute** — 8-4 is explicit that no such validation is specified at the frontend layer; a test asserting a rejection here would be testing for a control that was deliberately not built.
 
 ---

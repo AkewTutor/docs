@@ -151,7 +151,7 @@ These exist before any feature and are not owned by one feature's team.
 | `src/services/recordingConsent.service.ts` | Service | getConsentStatus, acknowledgeAsStudentOrParent, acknowledgeAsTutor (blocks first recorded session until both set) | prisma |
 | `src/controllers/recordingConsent.controller.ts` | Controller | getStatus, acknowledge handlers | recordingConsent.service.ts |
 | `src/routes/recordingConsent.routes.ts` | Route | mounts `/recording-consent/*`; `authMiddleware` | recordingConsent.controller.ts |
-| `src/utils/providers/storage.client.ts` | Util | wraps Cloudflare R2 (upload, signed URL generation) | env config |
+| `src/utils/providers/storage.client.ts` | Util | wraps S3-compatible object storage — Backblaze B2 (upload, signed URL generation) | env config |
 | `src/services/recording.service.ts` | Service | uploadRecording (720p, sets 90-day `expiresAt`), getSignedUrl, keepPermanently, flagMissing, escalateMissing | prisma, storage.client.ts |
 | `src/controllers/recording.controller.ts` | Controller | upload, getMyRecordings, getSignedUrl, keepPermanently handlers | recording.service.ts |
 | `src/routes/recording.routes.ts` | Route | mounts `/recordings/*`; `authMiddleware` (access scoped to own cohort membership) | recording.controller.ts |
@@ -295,10 +295,10 @@ These exist before any feature and are not owned by one feature's team.
 
 | File | Change |
 |---|---|
-| `.env.example` | Add `CHAPA_API_KEY`, `GEEZ_SMS_API_KEY`, `BREVO_API_KEY`, `CLOUDFLARE_R2_ACCESS_KEY`, `CLOUDFLARE_R2_SECRET_KEY`, `CLOUDFLARE_R2_BUCKET`, `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`. (`JWT_SECRET` is already present in the template's `.env.example` — not re-added.) Change `JWT_EXPIRES_IN`'s default from the template's `7d` to `30m`, per NFR-014's 30-minute access-token TTL. |
-| `src/config/env.ts` | **Fix (was missing):** extend `envSchema` with all eight new keys above (`CHAPA_API_KEY`, `GEEZ_SMS_API_KEY`, `BREVO_API_KEY`, `CLOUDFLARE_R2_ACCESS_KEY`, `CLOUDFLARE_R2_SECRET_KEY`, `CLOUDFLARE_R2_BUCKET`, `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`), all `z.string()` and required (none should default-empty). Listing a var in `.env.example` alone is not enough — `envSchema` uses `z.object()`, which strips any key not explicitly declared, so an unlisted var reads as `undefined` via `env.X` even when present in `.env`. Also update `JWT_EXPIRES_IN`'s schema default to `'30m'` to match the `.env.example` change above. |
+| `.env.example` | Add `CHAPA_API_KEY`, `GEEZ_SMS_API_KEY`, `BREVO_API_KEY`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_BUCKET`, `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`, plus `STORAGE_ENDPOINT` (required in production, e.g. `https://s3.<region>.backblazeb2.com`), optional `STORAGE_REGION` (derived from the endpoint if omitted) and `CHAPA_WEBHOOK_SECRET`. (`JWT_SECRET` is already present in the template's `.env.example` — not re-added.) Change `JWT_EXPIRES_IN`'s default from the template's `7d` to `30m`, per NFR-014's 30-minute access-token TTL. |
+| `src/config/env.ts` | **Fix (was missing):** extend `envSchema` with all eight new keys above (`CHAPA_API_KEY`, `GEEZ_SMS_API_KEY`, `BREVO_API_KEY`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_BUCKET`, `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`), all `z.string()` and required (none should default-empty). Listing a var in `.env.example` alone is not enough — `envSchema` uses `z.object()`, which strips any key not explicitly declared, so an unlisted var reads as `undefined` via `env.X` even when present in `.env`. Also update `JWT_EXPIRES_IN`'s schema default to `'30m'` to match the `.env.example` change above. |
 | `prisma/schema.prisma` | Add all 40 models + enums from Doc 04 |
-| `package.json` | Add dependencies: Prisma client, Zod, bcrypt, jsonwebtoken, a Chapa SDK/HTTP client, an R2-compatible S3 client (`@aws-sdk/client-s3`), a cron/job scheduler |
+| `package.json` | Add dependencies: Prisma client, Zod, bcrypt, jsonwebtoken, a Chapa SDK/HTTP client, an S3-compatible client (`@aws-sdk/client-s3`), a cron/job scheduler |
 | `src/routes/index.ts` | Register every feature's routers, grouped by feature comment blocks in build order (Section 10) |
 
 ---

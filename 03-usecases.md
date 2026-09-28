@@ -978,7 +978,7 @@
 | Linked FR | FR-CD-005, FR-TU-015 |
 
 **Main flow:**
-1. System stores the recording in cloud object storage (Cloudflare R2), with metadata only (student, tutor, session, storage key, file size, created/expiration date) in PostgreSQL.
+1. System stores the recording in cloud object storage (Backblaze B2 (S3-compatible)), with metadata only (student, tutor, session, storage key, file size, created/expiration date) in PostgreSQL.
 2. System routes it automatically to the correct student's personal Library entry — no manual filing step by the tutor.
 3. Recording is encoded at 720p, compressed.
 

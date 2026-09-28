@@ -1,6 +1,6 @@
 ## Project: AKEWTutor — Backend Test Documentation: Class Delivery, Recording & Library
 **Links back to:** [05a. Backend Folder & File Structure §4], [8-4. Function-Level Spec: Class Delivery, Recording & Library]
-**Conventions:** see `00-api-conventions.md` §0.1–0.7, esp. §0.4 (recording-missing/payment-pause-reschedule are job/event-driven) and §0.5 (Cloudflare R2, Jitsi shapes).
+**Conventions:** see `00-api-conventions.md` §0.1–0.7, esp. §0.4 (recording-missing/payment-pause-reschedule are job/event-driven) and §0.5 (Backblaze B2 (S3-compatible), Jitsi shapes).
 
 Per the standing rule: test file mirrors `src/` exactly under `tests/`. Vitest — `describe`/`it`/`expect`, mocks via `vi.fn()`/`vi.mock()`, `beforeEach(() => vi.clearAllMocks())`.
 
@@ -39,7 +39,7 @@ See `00-test-fixtures.md` and `00-agent-rules.md` for conventions binding this d
 | src/services/recordingConsent.service.ts | tests/services/recordingConsent.service.test.ts | Unit (mocked Prisma) | ☐ |
 | src/controllers/recordingConsent.controller.ts | tests/controllers/recordingConsent.controller.test.ts | Unit (mocked service) | ☐ |
 | src/routes/recordingConsent.routes.ts | tests/routes/recordingConsent.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
-| src/utils/providers/storage.client.ts | tests/utils/providers/storage.client.test.ts | Unit (mocked R2 SDK) | ☐ |
+| src/utils/providers/storage.client.ts | tests/utils/providers/storage.client.test.ts | Unit (mocked S3 SDK) | ☐ |
 | src/services/recording.service.ts | tests/services/recording.service.test.ts | Unit (mocked Prisma, mocked `recordingConsent.service`, mocked `storage.client`) | ☐ |
 | src/controllers/recording.controller.ts | tests/controllers/recording.controller.test.ts | Unit (mocked service) | ☐ |
 | src/routes/recording.routes.ts | tests/routes/recording.routes.test.ts | Integration (HTTP contract, supertest) | ☐ |
@@ -190,9 +190,9 @@ FRs: FR-SC-008–009.
 
 | Case | Setup | Action | Expected result |
 |---|---|---|---|
-| Successful upload | mock the R2 SDK `PutObject` call to resolve | call `upload(key, fileBuffer, 'video/mp4')` | resolves `{ storageKey }` |
+| Successful upload | mock the S3 SDK `PutObject` call to resolve | call `upload(key, fileBuffer, 'video/mp4')` | resolves `{ storageKey }` |
 | Upload failure propagates a normalized error | mock the SDK call to reject | call `upload(...)` | rejects — callers (`recording.service.ts`) are expected to handle this as a genuine failure, not silently swallowed like a notification dispatch |
-| Storage key is not derived from unsanitized user input | inspect the key passed to the SDK call, given a title/filename containing path-traversal-like characters (e.g. `../../etc/passwd`) | call `upload(maliciously-crafted-key, file, contentType)` | assert the actual key sent to R2 is sanitized/namespaced (e.g. prefixed with a generated UUID, not the raw user-supplied filename) — a raw pass-through here would be a path-traversal-adjacent object-storage risk (OWASP A05) |
+| Storage key is not derived from unsanitized user input | inspect the key passed to the SDK call, given a title/filename containing path-traversal-like characters (e.g. `../../etc/passwd`) | call `upload(maliciously-crafted-key, file, contentType)` | assert the actual key sent to storage is sanitized/namespaced (e.g. prefixed with a generated UUID, not the raw user-supplied filename) — a raw pass-through here would be a path-traversal-adjacent object-storage risk (OWASP A05) |
 
 #### getSignedUrl
 
@@ -200,7 +200,7 @@ FRs: FR-SC-008–009.
 |---|---|---|---|
 | Returns a URL with the requested expiry | mock the SDK's presigned-URL generator | call `getSignedUrl(storageKey, 900)` | resolves a URL string; the SDK call is asserted to have been invoked with `expiresIn: 900` |
 | Signed URL is short-lived per the platform's 900s convention | — | call `getSignedUrl(storageKey, 900)` from `recording.service.ts`'s actual call site | assert `recording.service.ts` always passes `900` (15 minutes), never an unbounded/very long expiry, for recording access (Section 5.8's "temporary/signed URLs, never permanent public links" requirement) |
-| Credentials never appear in the returned URL logged anywhere | spy on any logger | call `getSignedUrl(...)` | no log statement contains the raw `CLOUDFLARE_R2_SECRET_KEY` |
+| Credentials never appear in the returned URL logged anywhere | spy on any logger | call `getSignedUrl(...)` | no log statement contains the raw `STORAGE_SECRET_ACCESS_KEY` |
 
 ---
 
@@ -458,7 +458,7 @@ FRs: FR-SP-038, FR-TU-017.
 ### 9.23 Out of Scope for Automated Testing (and why)
 
 - **Real video encoding to 720p** — `recording.service.ts` is tested for whether it *calls* the storage/encoding step with the right parameters; actual transcoding correctness and output quality is a manual/infrastructure verification, not a unit test concern.
-- **Real Cloudflare R2 behavior** (bucket policy, actual signed-URL redemption, network latency) — `storage.client.ts` is unit-tested against a mocked SDK only.
+- **Real Backblaze B2 behavior** (bucket policy, actual signed-URL redemption, network latency) — `storage.client.ts` is unit-tested against a mocked SDK only.
 - **Jitsi link validity/liveness** — the backend stores and delivers a URL string; it never calls a Jitsi API (§0.5), so there is nothing to test beyond URL-shape validation, already covered in 9.2.
 - **`classReminder.job.ts` / `recordingMissingCheck.job.ts` interval scheduling** — covered indirectly via the services they call; the cron registration itself is excluded per the standing convention.
 - **Exact inclusive/exclusive behavior at the 12-hour reschedule boundary and the ≥30-minute Jitsi-link boundary** — flagged in both 9.9 and 9.15 as decisions Docs 01–04 leave to implementation-time judgment; this doc requires the chosen behavior be applied *consistently* and documented in code, rather than guessing a specific side of the boundary to hard-assert here.

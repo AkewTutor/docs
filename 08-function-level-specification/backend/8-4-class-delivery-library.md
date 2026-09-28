@@ -1,5 +1,5 @@
 ## Project: AKEWTutor — Backend Function-Level Spec: Class Delivery, Recording & Library
-**Conventions:** see `00-api-conventions.md` §0.1–0.7, esp. §0.4 (recording-missing escalation and payment-pause reschedule are job/event-driven, exposed here only as read state) and §0.5 (Cloudflare R2, Jitsi integration shapes). **API reference:** `04-class-delivery-library-api.md`. **Folder/file reference:** `05a-backend-structure.md` §4.
+**Conventions:** see `00-api-conventions.md` §0.1–0.7, esp. §0.4 (recording-missing escalation and payment-pause reschedule are job/event-driven, exposed here only as read state) and §0.5 (Backblaze B2 (S3-compatible), Jitsi integration shapes). **API reference:** `04-class-delivery-library-api.md`. **Folder/file reference:** `05a-backend-structure.md` §4.
 
 **Owns:** ScheduledSession, RescheduleRequest, SessionMiss, RecordingConsent, Recording, LibraryMaterial, WeeklyAssessment. **Depends on:** `matching-cohorts` (hard) — every session belongs to a confirmed `Cohort`.
 
@@ -138,7 +138,7 @@ Mounted at `/recording-consent`.
 
 ### src/utils/providers/storage.client.ts (new)
 
-Thin wrapper around Cloudflare R2 (§0.5). Shared contract:
+Thin wrapper around Backblaze B2 (S3-compatible) (§0.5). Shared contract:
 
 ```typescript
 interface StorageClient {
@@ -147,7 +147,7 @@ interface StorageClient {
 }
 ```
 
-Used by `recording.service.ts` and `library.service.ts`. Test file mocks the underlying R2 SDK call.
+Used by `recording.service.ts` and `library.service.ts`. Test file mocks the underlying S3 SDK call.
 
 ### src/services/recording.service.ts (new)
 
@@ -168,7 +168,7 @@ Test file: `tests/services/recording.service.test.ts` — includes the consent-g
 |---|---|
 | Signature | `getSignedUrl(callerId: string, recordingId: string): Promise<{ signedUrl: string; expiresIn: number }>` |
 | Throws | `ApiError(403, "Not authorized to access this recording")` — caller was never a member of this recording's cohort. `ApiError(404, "Recording no longer available")` — past retention and not `keepPermanently`, or `deletedAt` set. This **is** treated as not-found, distinct from an empty list, since the object is genuinely gone (§0.3). |
-| Side effects | `storage.client.ts → getSignedUrl` — short-lived URL (900s), never a direct client-to-R2 connection. |
+| Side effects | `storage.client.ts → getSignedUrl` — short-lived URL (900s), never a direct client-to-storage connection. |
 
 Test file: `tests/services/recording.service.test.ts` — includes the cross-student-access-denied case explicitly (a student who was never a member of the recording's cohort, even with a guessed valid UUID).
 
